@@ -17,7 +17,6 @@ export const DESIGNER_REFERENCE_SELECT = {
 
 export type DesignerReferenceRow = ReferenceRow & {
   editRationale: string;
-  cropBox: unknown;
 };
 
 export type DesignerReferenceRead = {

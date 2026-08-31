@@ -297,8 +297,8 @@ Every `*_LIMIT` in the module, and what a refusal says. The set as a whole is
 
 ### 1. The ones that bound a bill
 
-`CROP_CALL_LIMIT` is how many cuts one turn of the conversation may ask for.
-Every other tool here is a database read; this one is a vision call on a
+`EDIT_CALL_LIMIT` is how many edited versions one turn of the conversation may
+ask for. Every other tool here is a database read; this one is a vision call on a
 photograph, which is the most expensive thing this app does. So there is a
 ceiling at all: a loop that has decided to crop does not stop on its own. It
 sits at `COMPOSE_BLOCK_LIMIT` because that is the size of the thing being
@@ -306,6 +306,16 @@ cropped. "Crop everything on this board to fit" is one sentence about a board
 that may hold twelve pictures, and a ceiling of two turned it into six turns of
 the user saying "and the next one" — which spends the same vision calls and six
 times the routing to get there.
+
+**It counts tool calls, not model calls — restated 2026-09-01.** When the cropper
+became the image editor, one call stopped being one vision read: an edit carrying
+a grade is looked at again, so it costs two, or three if the model adjusts once,
+and a worst case of three planning attempts and two looks is five. The number
+stayed at 12 anyway, because what it bounds is how many new references a turn may
+spawn — a product limit about what the user is handed, not a bill ceiling. The
+bill moved with it and is worth knowing: worst-case spend per turn rises from 36
+flash reads to 60. The **median** edit is unchanged at one, because only a grade
+buys a second look. This is the one number here worth a second opinion later.
 
 `GENERATE_CALL_LIMIT` = 2 is how many pictures one turn may buy — the same
 ceiling and for the same reason twice over: a generation is a model call on the
@@ -708,7 +718,7 @@ somewhere;
 agent 8 places it itself, in a box it wrote, so both descriptions end at
 `put_on_canvas` and neither mentions a slot.
 
-`crop_image` is `crop_reference` in §II.4's nouns, with `toObjectId` in place of
+`edit_image` is `edit_reference` in §II.4's nouns, with `toObjectId` in place of
 agent 6's `boardId` and `pageId`. The old pair assumed the opening came from a
 template: agent 6 names a board and the executor looks up which *slot* the
 picture is sitting in. Agent 8 has no templates. Its openings are boxes it wrote

@@ -167,6 +167,10 @@ function jsonInput(value: Prisma.JsonValue): Prisma.InputJsonValue {
   return value as Prisma.InputJsonValue;
 }
 
+function referenceColumns(reference: Reference): Prisma.ReferenceUncheckedCreateInput {
+  return { ...reference, edit: jsonInput(reference.edit) };
+}
+
 function nullableJson(value: Prisma.JsonValue | null) {
   return value === null ? Prisma.DbNull : (value as Prisma.InputJsonValue);
 }
@@ -236,7 +240,7 @@ export async function writeProject(
   if (withChats) await client.conversation.createMany({ data: copied.conversations });
 
   for (const reference of orderedReferences(copied.references)) {
-    await client.reference.create({ data: reference });
+    await client.reference.create({ data: referenceColumns(reference) });
   }
 
   await client.analysis.createMany({ data: copied.analyses });

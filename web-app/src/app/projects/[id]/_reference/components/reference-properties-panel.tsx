@@ -12,13 +12,13 @@ import {
   trailUpTo,
   type TrailStep,
 } from "@/lib/references/reference-trail";
-import { cropBoxOutline } from "@/lib/references/reference-version";
 import { DrawnFrom } from "./drawn-from";
 import { useSidebarStore } from "../../_workspace/stores/use-sidebar-store";
 import { takeVersionFocus, useFocusedVersion } from "../stores/use-version-focus-store";
 import { useViewportWidth } from "../hooks/use-viewport-width";
 import { ReferenceProperties } from "./reference-properties";
 import { ReferenceVersions } from "./reference-versions";
+import { EditOverlay, type EditMark } from "@/app/projects/[id]/_reference/components/edit-overlay";
 
 export type PanelReference = TrailStep;
 
@@ -41,20 +41,19 @@ export function ReferencePropertiesPanel({
   const shown = trailCurrent(trail) ?? reference;
   const atRoot = isTrailRoot(trail);
 
-  const [pointed, setPointed] = useState<{ stepId: string; cropBox: number[] } | null>(null);
+  const [pointed, setPointed] = useState<{ stepId: string; mark: EditMark } | null>(null);
 
-  const [proposed, setProposed] = useState<{ stepId: string; cropBox: number[] } | null>(null);
+  const [proposed, setProposed] = useState<{ stepId: string; mark: EditMark } | null>(null);
   const propose = useCallback(
-    (cropBox: number[] | null) => setProposed(cropBox ? { stepId: shown.id, cropBox } : null),
+    (mark: EditMark) => setProposed(mark ? { stepId: shown.id, mark } : null),
     [shown.id],
   );
 
   const focusVersionId = useFocusedVersion(shown.id);
 
   const highlighted =
-    (pointed?.stepId === shown.id ? pointed.cropBox : null) ??
-    (proposed?.stepId === shown.id ? proposed.cropBox : null);
-  const outline = cropBoxOutline(highlighted);
+    (pointed?.stepId === shown.id ? pointed.mark : null) ??
+    (proposed?.stepId === shown.id ? proposed.mark : null);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -112,18 +111,7 @@ export function ReferencePropertiesPanel({
         <div className="relative shrink-0 overflow-hidden rounded-lg">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={shown.thumbUrl} alt={trailLabel(shown)} className="block w-full" />
-          {outline ? (
-            <div
-              aria-hidden
-              style={{
-                left: `${outline.left}%`,
-                top: `${outline.top}%`,
-                width: `${outline.width}%`,
-                height: `${outline.height}%`,
-              }}
-              className="pointer-events-none absolute border border-white/90 shadow-[0_0_0_9999px_rgba(0,0,0,0.55)]"
-            />
-          ) : null}
+          <EditOverlay mark={highlighted} />
         </div>
         <DrawnFrom reference={shown} />
 
@@ -134,7 +122,7 @@ export function ReferencePropertiesPanel({
           referenceId={shown.id}
           frame={shown}
           onOpen={(version) => setTrail((walked) => openedTrail(walked, version))}
-          onPoint={(cropBox) => setPointed(cropBox ? { stepId: shown.id, cropBox } : null)}
+          onPoint={(mark) => setPointed(mark ? { stepId: shown.id, mark } : null)}
           onPropose={propose}
           focusVersionId={focusVersionId}
           onFocusApplied={takeVersionFocus}

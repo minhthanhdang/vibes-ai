@@ -6,7 +6,7 @@ import { SiteHeader } from "../site-header";
 const PIPELINE = [
   { agent: "1", name: "Reference intake", detail: "You upload the references — agent 7 draws the rest. Not an agent." },
   { agent: "2", name: "Property analyzer", detail: "Tags palette, lighting, texture, composition, subject, contrast." },
-  { agent: "3", name: "Cropper", detail: "Detects the box, crops deterministically." },
+  { agent: "3", name: "Image editor", detail: "Crops, turns, flips and grades — deterministically." },
   { agent: "4", name: "Compositor", detail: "Packs crops onto a board, fills the seams." },
   { agent: "5", name: "Presentation builder", detail: "Turns the board into a Slides deck that explains itself." },
   { agent: "6", name: "Orchestrator", detail: "Routes between the four agents above and the one below." },

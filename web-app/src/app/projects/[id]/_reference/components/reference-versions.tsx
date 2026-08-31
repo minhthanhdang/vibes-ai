@@ -14,13 +14,14 @@ import {
   cropShapeMeasured,
   cropSizeLabel,
   cropSoftOnBoard,
-  existingCut,
   relabeledIntent,
   sameCut,
   versionDescendants,
   versionLabel,
   versionNote,
 } from "@/lib/references/reference-version";
+import { cropEdit, editBox, editShape, existingEdit } from "@/lib/references/reference-edit";
+import type { EditMark } from "@/app/projects/[id]/_reference/components/edit-overlay";
 import {
   REFERENCE_DRAG_MIME,
   encodeReferenceDrag,
@@ -66,8 +67,8 @@ export function ReferenceVersions({
   frame?: { width?: number | null; height?: number | null };
   onOpen?: (version: TrailStep) => void;
   canPlace?: boolean;
-  onPoint?: (cropBox: number[] | null) => void;
-  onPropose?: (cropBox: number[] | null) => void;
+  onPoint?: (mark: EditMark) => void;
+  onPropose?: (mark: EditMark) => void;
   focusVersionId?: string | null;
   onFocusApplied?: () => void;
 }) {
@@ -91,7 +92,7 @@ export function ReferenceVersions({
   const busy = stage !== "idle";
 
   useEffect(() => {
-    onPropose?.(proposal?.cropBox ?? null);
+    onPropose?.(proposal ? cropEdit(cropBoxOf(proposal.cropBox)!, proposal.aspect ?? proposal.loose) : null);
   }, [onPropose, proposal]);
 
   const walkedTo = useRef<string | null>(null);
@@ -101,7 +102,7 @@ export function ReferenceVersions({
     if (!wanted) return;
     walkedTo.current = focusVersionId;
     markedRow.current?.scrollIntoView({ block: "nearest" });
-    onPoint?.(wanted.cropBox);
+    onPoint?.(wanted.edit);
   }, [focusVersionId, versions, onPoint]);
 
   const offered = proposal && {
@@ -110,9 +111,9 @@ export function ReferenceVersions({
     coverage: cropCoverageLabel(proposal.cropBox),
     size: cropSizeLabel(proposal.cropBox, frame ?? {}),
     soft: cropSoftOnBoard(proposal.cropBox, frame ?? {}),
-    repeats: existingCut(proposal.cropBox, versions, { except: proposal.origin?.id }),
+    repeats: existingEdit(proposal.cropBox, versions, { except: proposal.origin?.id }),
     moved: proposal.origin,
-    unmoved: proposal.origin ? sameCut(proposal.cropBox, proposal.origin.cropBox) : false,
+    unmoved: proposal.origin ? sameCut(proposal.cropBox, editBox(proposal.origin.edit)) : false,
     aspect: proposal.aspect,
     framed: looseShapeOf(proposal.loose),
     shape: cropShapeMeasured(proposal.cropBox, frame ?? {}),
@@ -357,7 +358,7 @@ export function ReferenceVersions({
             const onBoard = placed?.get(version.id);
             const label = versionLabel(version);
             const note = versionNote(version);
-            const shape = shapeAsked(version.editAspect)?.label ?? null;
+            const shape = shapeAsked(editShape(version.edit))?.label ?? null;
             const armed = armedId === version.id;
             const adjusting = adjustingId === version.id;
             const renaming = renamingId === version.id;
@@ -373,12 +374,12 @@ export function ReferenceVersions({
                 onDragStart={(event) => startVersionDrag(event, version)}
                 onMouseEnter={() => {
                   onFocusApplied?.();
-                  onPoint?.(version.cropBox);
+                  onPoint?.(version.edit);
                 }}
                 onMouseLeave={() => !adjusting && !renaming && onPoint?.(null)}
                 onFocus={() => {
                   onFocusApplied?.();
-                  onPoint?.(version.cropBox);
+                  onPoint?.(version.edit);
                 }}
                 onBlur={() => !adjusting && !renaming && onPoint?.(null)}
                 title={`${label}${onBoard ? " — on this board" : ""}${
@@ -439,14 +440,14 @@ export function ReferenceVersions({
                     on board
                   </span>
                 ) : null}
-                {!proposal && !armed && !renaming && cropBoxOf(version.cropBox) ? (
+                {!proposal && !armed && !renaming && editBox(version.edit) ? (
                   <button
                     type="button"
                     disabled={busy}
                     onClick={() => {
                       setAdjustingId(adjusting ? null : version.id);
                       setAdjustment("");
-                      onPoint?.(adjusting ? null : version.cropBox);
+                      onPoint?.(adjusting ? null : version.edit);
                     }}
                     aria-expanded={adjusting}
                     title={`Ask for “${label}” moved`}
@@ -461,7 +462,7 @@ export function ReferenceVersions({
                     onClick={() => {
                       setRenamingId(renaming ? null : version.id);
                       setRenamed(renaming ? "" : version.editIntent);
-                      onPoint?.(renaming ? null : version.cropBox);
+                      onPoint?.(renaming ? null : version.edit);
                     }}
                     aria-expanded={renaming}
                     title={`Rename “${label}”`}
@@ -513,9 +514,8 @@ export function ReferenceVersions({
                       void adjust(
                         {
                           id: version.id,
-                          cropBox: version.cropBox,
+                          edit: version.edit,
                           editIntent: version.editIntent,
-                          editAspect: version.editAspect,
                         },
                         adjustment,
                       );

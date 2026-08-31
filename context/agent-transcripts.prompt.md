@@ -226,7 +226,7 @@ the wrapped function still returns its value.
 
 Here and not at the injected `generate` seams. Every agent already defaults to
 this function — `orchestrator.ts:373`, `designer/loop.ts:273`, `analyzer.ts:94`,
-`cropper.ts:127`, `image-generator.ts:125` — so one tap catches all of them, and
+`image-editor.ts:198`, `image-generator.ts:125` — so one tap catches all of them, and
 catches the next one for free. Wrapping at each seam would mean threading a
 wrapper through five call chains and forgetting the sixth.
 
@@ -263,7 +263,7 @@ Wrap each agent's public entry in `withTranscript`, innermost body unchanged:
 | 6 orchestrator | `src/server/agents/orchestrator/turn.ts:16` | `runOrchestratorTurn` | `orchestrator` |
 | 8 designer | `src/server/agents/designer/design.ts:252` | `designPage` | `designer` |
 | 2 analyzer | `src/server/agents/analyzer/analyzer.ts:84` | `analyzeReference` | `analyzer` |
-| 3 cropper | `src/server/agents/cropper/cropper.ts:116` | `cropReference` | `cropper` |
+| 3 image editor | `src/server/agents/image-editor/image-editor.ts:127` | `editReference` | `image-editor` |
 | — image | `src/server/agents/image-generator/image-generator.ts:120` | `generateImage` | `image-generator` |
 
 `LAYOUT_READER` and `COMPOSITOR` make their calls inline inside

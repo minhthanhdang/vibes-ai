@@ -7,7 +7,8 @@ import { useTRPC, useTRPCClient } from "@/trpc/react";
 import { mapWithConcurrency } from "@/lib/util/concurrency";
 import { hashFileContent } from "@/lib/intake/content-hash";
 import { croppablePhotos } from "@/lib/canvas/moodboard-crop";
-import { BOARD_CROP_INTENT, cropBoxColumns, cropBoxOfRegion } from "@/lib/references/reference-version";
+import { BOARD_CROP_INTENT, cropBoxOfRegion } from "@/lib/references/reference-version";
+import { cropEdit } from "@/lib/references/reference-edit";
 import { referenceFileId } from "@/lib/scene/moodboard-scene";
 import { referenceCanvasImagePath } from "@/server/references/display";
 import { cutFromOriginal } from "../../../_reference/utils/cut-reference";
@@ -62,7 +63,7 @@ export function useBoardCrops({
             contentHash: await hashFileContent(cut.file),
             sourceReferenceId: photo.referenceId,
             editIntent: BOARD_CROP_INTENT,
-            cropBox: cropBoxColumns(box),
+            edit: cropEdit(box),
           });
 
           return {

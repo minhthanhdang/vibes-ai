@@ -130,25 +130,33 @@ model Reference {
   /// user drew by hand — nobody reasoned about that box in words.
   editRationale String @default("")
 
-  /// The region a cropped version was cut from, normalized 0-1000 exactly as
-  /// Gemini returns it: `[ymin, xmin, ymax, xmax]`. Stored as the model's own
-  /// numbers rather than as pixels of the source, so it still names the same
-  /// part of the frame if the source is ever re-encoded at another size, and
-  /// read only through `cropBoxOf`. Empty on a row that is not a crop.
-  cropBox Int[] @default([])
-
-  /// The format this cut was asked to be held to ("2.39:1", "16:9"), by the name
-  /// the user chose it under. Empty on an original, on a crop drawn by hand
-  /// and on a cut asked for at no particular shape.
+  /// What was done to the frame to get this version: an ordered list of edits,
+  /// `[{ op: "crop", box, shape? }, { op: "turn" }, { op: "flip" }, { op: "grade" }]`,
+  /// at most one of each kind and always in that order. `[]` on an original, and
+  /// read only through `editOps` — a Json column is validated by nothing, so the
+  /// reader is tolerant by construction and the writer is the strict side.
   ///
-  /// The shape is not recoverable from `cropBox`: the box is a share of each edge
-  /// of a frame that is not square, and the ratio it was fitted to survives in the
-  /// pixels only to within the rounding back into 0-1000 units — so a cut that
-  /// happens to measure 1.78 and one that was *asked for* at 16:9 would be
-  /// indistinguishable. The difference matters when the cut is moved: a nudge
-  /// about a scope crop is about where the edges of scope sit, not about giving
-  /// the format up.
-  editAspect String @default("")
+  /// A list rather than the `cropBox Int[]` and `editAspect String` it replaces,
+  /// because an edit is no longer one box: a picture can be cut, turned and
+  /// graded in one pass and every part of that has to survive into the row.
+  ///
+  /// A crop's box is normalized 0-1000 exactly as Gemini returns it —
+  /// `[ymin, xmin, ymax, xmax]` — stored as the model's own numbers rather than
+  /// as pixels of the source, so it still names the same part of the frame if the
+  /// source is ever re-encoded at another size. It is first in the list because it
+  /// is read against the frame: a box after a turn would be in the coordinates of
+  /// a picture no overlay is drawing.
+  ///
+  /// The crop's `shape` is the format it was asked to be held to ("2.39:1",
+  /// "16:9", "square"), by the name the user chose it under, and it is on the op
+  /// rather than on the row because it is a fact about that box. It is not
+  /// recoverable from the box: the box is a share of each edge of a frame that is
+  /// not square, and the ratio it was fitted to survives in the pixels only to
+  /// within the rounding back into 0-1000 units — so a cut that happens to
+  /// measure 1.78 and one that was *asked for* at 16:9 would be indistinguishable.
+  /// The difference matters when the cut is moved: a nudge about a scope crop is
+  /// about where the edges of scope sit, not about giving the format up.
+  edit Json @default("[]")
 
   /// Where the bytes came from: dropped by the user, fetched off another page,
   /// or made by the image model. A column rather than a convention — the web

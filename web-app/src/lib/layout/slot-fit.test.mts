@@ -129,7 +129,7 @@ test("a slot no name can close is still closed by a cut, and then left alone", (
 });
 
 test("the loose-fit note tells the model the cut is made, not offered", () => {
-  assert.match(LOOSE_IN_SLOT_NOTE, /crop_reference at the shape beside each one/);
+  assert.match(LOOSE_IN_SLOT_NOTE, /edit_reference at the shape beside each one/);
   assert.match(LOOSE_IN_SLOT_NOTE, /passing this board's id as boardId/);
   assert.match(LOOSE_IN_SLOT_NOTE, /puts the cut in its place there in the one call/);
   assert.match(LOOSE_IN_SLOT_NOTE, /Nothing else is owed for it; the exchange is made inside that call/);

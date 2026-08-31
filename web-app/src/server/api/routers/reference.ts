@@ -18,7 +18,9 @@ import { enqueueAnalysis, kickAnalyzerWorker } from "@/server/agents/analyzer/an
 import { shouldEnqueueAnalysis } from "@/lib/analysis/analyzer-queue";
 import { HASH_LOOKUP_LIMIT, hashFileContent } from "@/lib/intake/content-hash";
 import { derivedWrite } from "@/lib/intake/reference-derived";
-import { cropReference, CropperError } from "@/server/agents/cropper/cropper";
+import { editReference, ImageEditorError } from "@/server/agents/image-editor/image-editor";
+import { EDIT_OPS_LIMIT, editOps, usableEditOps } from "@/lib/edit/edit-ops";
+import { cropPlan } from "@/lib/references/reference-edit";
 import { spentColumns, spentThrown } from "@/lib/agent/shared/model-cost";
 import {
   cropShapeOf,
@@ -26,8 +28,6 @@ import {
   shapeAsked,
   cropBoxAtAspect,
   cropBoxColumns,
-  cropBoxOf,
-  cropPlan,
   EDIT_INTENT_LIMIT,
   EDIT_RATIONALE_LIMIT,
   relabeledIntent,
@@ -50,8 +50,6 @@ const GALLERY_RUN_LIMIT = 500;
 const cropShape = z.string().refine((value) => cropShapeOf(value) !== null, "not a shape");
 
 const looseShape = z.string().refine((value) => looseShapeOf(value) !== null, "not a shape");
-
-const askedShape = z.string().refine((value) => shapeAsked(value) !== null, "not a shape");
 
 const ANALYSIS_PROPERTIES = {
   title: true,
@@ -157,8 +155,7 @@ export const referenceRouter = createTRPCRouter({
           title: true,
           editIntent: true,
           editRationale: true,
-          cropBox: true,
-          editAspect: true,
+          edit: true,
           width: true,
           height: true,
           generationPrompt: true,
@@ -168,7 +165,7 @@ export const referenceRouter = createTRPCRouter({
         },
       });
       if (!reference) throw new TRPCError({ code: "NOT_FOUND" });
-      return forDisplaySigned(reference);
+      return forDisplaySigned({ ...reference, edit: editOps(reference.edit) });
     }),
 
   properties: protectedProcedure
@@ -206,8 +203,7 @@ export const referenceRouter = createTRPCRouter({
           title: true,
           editIntent: true,
           editRationale: true,
-          cropBox: true,
-          editAspect: true,
+          edit: true,
           origin: true,
           width: true,
           height: true,
@@ -216,7 +212,7 @@ export const referenceRouter = createTRPCRouter({
           thumbGcsUri: true,
         },
       });
-      return manyForDisplaySigned(versions);
+      return manyForDisplaySigned(versions.map((v) => ({ ...v, edit: editOps(v.edit) })));
     }),
 
   versionLinksByProject: protectedProcedure
@@ -396,11 +392,12 @@ export const referenceRouter = createTRPCRouter({
       let spent: ReturnType<typeof spentColumns> | undefined;
 
       try {
-        const answer = await cropReference({
+        const answer = await editReference({
           gcsUri: reference.gcsUri,
           prompt: input.prompt,
           title: reference.title,
           previous: input.previous,
+          only: "crop",
           ...(asked?.shape && { aspect: asked.shape.label }),
           ...(framed && { loose: framed, frame: reference }),
         });
@@ -410,7 +407,7 @@ export const referenceRouter = createTRPCRouter({
           ? cropBoxAtAspect(cropBoxColumns(answer.box), reference, ratio)
           : answer.box;
         if (!box) {
-          throw new CropperError(`the cropper's box could not be held to ${input.aspect}`);
+          throw new ImageEditorError(`the cropper's box could not be held to ${input.aspect}`);
         }
 
         const plan = cropPlan({
@@ -420,7 +417,7 @@ export const referenceRouter = createTRPCRouter({
           sourceTitle: reference.title,
         });
         if (!plan) {
-          throw new CropperError("the whole frame is the shot — there is nothing to crop out of it");
+          throw new ImageEditorError("the whole frame is the shot — there is nothing to crop out of it");
         }
 
         await ctx.db.agentRun.update({
@@ -443,8 +440,8 @@ export const referenceRouter = createTRPCRouter({
         });
 
         throw new TRPCError({
-          code: cause instanceof CropperError ? "BAD_REQUEST" : "INTERNAL_SERVER_ERROR",
-          message: cause instanceof CropperError ? message : "the cropper could not be reached",
+          code: cause instanceof ImageEditorError ? "BAD_REQUEST" : "INTERNAL_SERVER_ERROR",
+          message: cause instanceof ImageEditorError ? message : "the cropper could not be reached",
           cause,
         });
       }
@@ -459,8 +456,7 @@ export const referenceRouter = createTRPCRouter({
         thumbGcsUri: z.string().optional(),
         editIntent: z.string().max(EDIT_INTENT_LIMIT).default(""),
         editRationale: z.string().max(EDIT_RATIONALE_LIMIT).default(""),
-        cropBox: z.array(z.number().int()).length(4),
-        editAspect: askedShape.optional(),
+        edit: z.array(z.unknown()).min(1).max(EDIT_OPS_LIMIT),
         width: z.number().int().positive().optional(),
         height: z.number().int().positive().optional(),
         contentHash: z.string().regex(/^[0-9a-f]{64}$/).optional(),
@@ -480,8 +476,8 @@ export const referenceRouter = createTRPCRouter({
       });
       if (!source) throw new TRPCError({ code: "NOT_FOUND" });
 
-      const box = cropBoxOf(input.cropBox);
-      if (!box) throw new TRPCError({ code: "BAD_REQUEST", message: "not a box of this reference" });
+      const read = usableEditOps(input.edit);
+      if ("fault" in read) throw new TRPCError({ code: "BAD_REQUEST", message: read.fault });
 
       const reference = await ctx.db.$transaction((tx) =>
         fileVersion(tx, {
@@ -491,8 +487,7 @@ export const referenceRouter = createTRPCRouter({
           thumbGcsUri: input.thumbGcsUri,
           editIntent: input.editIntent,
           editRationale: input.editRationale,
-          cropBox: box,
-          editAspect: input.editAspect,
+          edit: read.ops,
           width: input.width,
           height: input.height,
           contentHash: input.contentHash,

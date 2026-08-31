@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 process.env.SKIP_ENV_VALIDATION = "1";
 
 const { fileVersion } = await import("./file-version");
+const { cropEdit } = await import("@/lib/references/reference-edit");
 const { AgentKind, ReferenceOrigin, RunStatus } = await import("@/generated/prisma/enums");
 
 type Written = Record<string, unknown>;
@@ -42,8 +43,7 @@ test("a cut is filed under the frame's title and box, with its analyzer job besi
     thumbGcsUri: "gs://b/cut-thumb.jpg",
     editIntent: "the range and the shelf above it",
     editRationale: "the counter clutter is not the shot",
-    cropBox: box,
-    editAspect: "4:3",
+    edit: cropEdit(box, "4:3"),
     width: 1400,
     height: 1050,
     contentHash: "a".repeat(64),
@@ -61,8 +61,7 @@ test("a cut is filed under the frame's title and box, with its analyzer job besi
     sourceReferenceId: "frame",
     editIntent: "the range and the shelf above it",
     editRationale: "the counter clutter is not the shot",
-    cropBox: [100, 200, 800, 900],
-    editAspect: "4:3",
+    edit: [{ op: "crop", box: [100, 200, 800, 900], shape: "4:3" }],
     origin: ReferenceOrigin.UPLOADED,
   });
 
@@ -81,7 +80,7 @@ test("a cut inherits where the frame's bytes came from", async () => {
     projectId: "p1",
     source: { id: "frame", title: "Sketch", origin: ReferenceOrigin.GENERATED },
     gcsUri: "gs://b/cut.jpg",
-    cropBox: box,
+    edit: cropEdit(box),
   });
 
   assert.equal(db.references[0]!.origin, ReferenceOrigin.GENERATED);
@@ -95,14 +94,14 @@ test("a cut nobody said anything about is filed with the columns empty, not abse
     source: { id: "frame", title: "  Kitchen  " },
     gcsUri: "gs://b/cut.jpg",
     editIntent: "the range   and\nthe shelf",
-    cropBox: box,
+    edit: cropEdit(box),
   });
 
   const written = db.references[0]!;
   assert.equal(written.title, "Kitchen (crop)");
   assert.equal(written.editIntent, "the range and the shelf");
   assert.equal(written.editRationale, "");
-  assert.equal(written.editAspect, "");
+  assert.deepEqual(written.edit, [{ op: "crop", box: [100, 200, 800, 900] }]);
   assert.equal(written.origin, ReferenceOrigin.UPLOADED);
 });
 
@@ -115,7 +114,7 @@ test("the columns a caller selects are the ones it is answered with", async () =
       projectId: "p1",
       source: { id: "frame", title: "Kitchen" },
       gcsUri: "gs://b/cut.jpg",
-      cropBox: box,
+      edit: cropEdit(box),
     },
     { id: true, title: true },
   );
@@ -133,8 +132,7 @@ test("the panel's cut and the assistant's cut of one frame are filed as the same
     thumbGcsUri: "gs://b/cut-thumb.jpg",
     editIntent: "the range and the shelf above it",
     editRationale: "the counter clutter is not the shot",
-    cropBox: box,
-    editAspect: "4:3",
+    edit: cropEdit(box, "4:3"),
     width: 1400,
     height: 1050,
     contentHash: "b".repeat(64),

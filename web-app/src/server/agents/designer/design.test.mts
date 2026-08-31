@@ -324,7 +324,7 @@ const TWENTY_ONE = [
   "get_modification",
   "discard_image",
   "generate_image",
-  "crop_image",
+  "edit_image",
   "get_skills",
 ];
 
@@ -347,7 +347,7 @@ test("no declaration agent 8 reads gives a page size in pixels", () => {
   );
 });
 
-const BYTE_MAKERS = ["generate_image", "crop_image"];
+const BYTE_MAKERS = ["generate_image", "edit_image"];
 
 test("every tool the instruction names is one agent 8 holds, and the reverse", () => {
   const named = new Set(designerInstruction().match(/\b[a-z]+(?:_[a-z]+)+\b/g) ?? []);

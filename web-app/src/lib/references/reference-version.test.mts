@@ -23,12 +23,10 @@ import {
   cropBoxOutline,
   cropCoverageLabel,
   cropPixelSize,
-  cropPlan,
   cropRegionOfBox,
   cropSizeLabel,
   cropSoftOnBoard,
   editIntent,
-  existingCut,
   editRationale,
   priorCropNote,
   referenceCaption,
@@ -38,7 +36,6 @@ import {
   versionCountIndex,
   versionCountLabel,
   versionDescendants,
-  versionCredit,
   versionLabel,
   versionNote,
   versionOrigin,
@@ -139,61 +136,10 @@ test("an intent is a label, so it is one line and bounded", () => {
   assert.equal(editIntent("   "), "");
 });
 
-test("a plan is the cut, the name it is filed under, the box it came from and why", () => {
-  const plan = cropPlan({
-    box: cropBoxOf(box(120, 430, 260, 520))!,
-    intent: "  just the\thands  ",
-    rationale: "  Tight on the hands;\n the face reads as a distraction here.  ",
-    sourceTitle: "Hallway, night",
-  });
-
-  assert.deepEqual(plan, {
-    region: { x: 0.43, y: 0.12, width: 0.09, height: 0.14 },
-    title: "Hallway, night (crop)",
-    editIntent: "just the hands",
-    editRationale: "Tight on the hands; the face reads as a distraction here.",
-    cropBox: [120, 430, 260, 520],
-  });
-});
-
-test("a plan from a cropper that reasoned about nothing still files a version", () => {
-  const plan = cropPlan({
-    box: cropBoxOf(box(0, 200, 1000, 800))!,
-    intent: "the sign",
-    sourceTitle: "Wide",
-  });
-  assert.equal(plan?.editRationale, "");
-});
-
 test("a rationale is a sentence, so it is one line and bounded", () => {
   assert.equal(editRationale(" why\tthis  box\nis the box "), "why this box is the box");
   assert.equal(editRationale("x".repeat(EDIT_RATIONALE_LIMIT + 100)).length, EDIT_RATIONALE_LIMIT);
   assert.ok(EDIT_RATIONALE_LIMIT > EDIT_INTENT_LIMIT);
-});
-
-test("cropping a crop counts up rather than stacking suffixes", () => {
-  const plan = cropPlan({
-    box: cropBoxOf(box(0, 200, 1000, 800))!,
-    intent: "the sign",
-    sourceTitle: "Hallway, night (crop)",
-  });
-  assert.equal(plan?.title, "Hallway, night (crop 2)");
-});
-
-test("there is no plan when the frame is already the shot", () => {
-  assert.equal(
-    cropPlan({ box: cropBoxOf(box(0, 0, 1000, 1000))!, intent: "all of it", sourceTitle: "Wide" }),
-    null,
-  );
-  assert.equal(
-    cropPlan({ box: cropBoxOf(box(500, 500, 505, 900))!, intent: "a sliver", sourceTitle: "Wide" }),
-    null,
-  );
-});
-
-test("a version with no intent is still a version", () => {
-  const plan = cropPlan({ box: cropBoxOf(box(0, 200, 1000, 800))!, intent: "", sourceTitle: "Wide" });
-  assert.equal(plan?.editIntent, "");
 });
 
 test("a version is listed by what it was asked for, not by its title", () => {
@@ -236,44 +182,6 @@ test("a rationale that repeats the label is not shown twice", () => {
   assert.equal(
     versionNote({ editIntent: "", title: "Hallway, night (crop)", editRationale: "hallway night (crop)" }),
     null,
-  );
-});
-
-test("a photograph has nothing to credit", () => {
-  assert.equal(versionCredit({ editIntent: "", source: null }), null);
-  assert.equal(versionCredit({}), null);
-});
-
-test("a cut is credited to the frame first and to the asking second", () => {
-  assert.equal(
-    versionCredit({ editIntent: "just the hands", source: { title: "Hallway, night" } }),
-    "Cropped from “Hallway, night” — just the hands",
-  );
-});
-
-test("a cut nobody said anything about is still credited to its frame", () => {
-  assert.equal(
-    versionCredit({ editIntent: "", source: { title: "Hallway, night" } }),
-    "Cropped from “Hallway, night”",
-  );
-  assert.equal(
-    versionCredit({ editIntent: "  ", source: { title: "Hallway, night" } }),
-    "Cropped from “Hallway, night”",
-  );
-});
-
-test("a frame with no title is still the frame this was cut from", () => {
-  assert.equal(
-    versionCredit({ editIntent: "the sign", source: { title: "   " } }),
-    "Cropped from the original — the sign",
-  );
-  assert.equal(versionCredit({ source: { title: null } }), "Cropped from the original");
-});
-
-test("a credited intent is one line however it was written", () => {
-  assert.equal(
-    versionCredit({ editIntent: " just\n the  hands ", source: { title: "Wide" } }),
-    "Cropped from “Wide” — just the hands",
   );
 });
 
@@ -389,8 +297,8 @@ test("a frame that was never cropped says nothing about its cuts", () => {
 });
 
 test("a frame says how many cuts of it there are", () => {
-  assert.equal(versionCountLabel(1), "1 crop");
-  assert.equal(versionCountLabel(4), "4 crops");
+  assert.equal(versionCountLabel(1), "1 version");
+  assert.equal(versionCountLabel(4), "4 versions");
 });
 
 test("the cuts of a project are counted by the frame they were cut from", () => {
@@ -586,49 +494,6 @@ test("a crop cannot be held to a shape the frame's pixels are unknown to", () =>
   assert.equal(cropBoxAtAspect(box(200, 200, 800, 800), { width: 1000, height: null }, 1), null);
   assert.equal(cropBoxAtAspect(null, { width: 1000, height: 1000 }, 1), null);
   assert.equal(cropBoxAtAspect(box(200, 200, 800, 800), { width: 1000, height: 1000 }, 0), null);
-});
-
-test("a box the frame has already been cut at names the cut it repeats", () => {
-  const versions = [
-    { id: "sign", cropBox: box(100, 100, 400, 400) },
-    { id: "hands", cropBox: box(500, 200, 900, 700) },
-  ];
-  assert.equal(existingCut(box(502, 199, 898, 703), versions)?.id, "hands");
-});
-
-test("a box of another part of the frame is a cut of its own", () => {
-  const versions = [{ id: "hands", cropBox: box(500, 200, 900, 700) }];
-  assert.equal(existingCut(box(100, 100, 400, 400), versions), null);
-  assert.equal(existingCut(box(550, 250, 850, 650), versions), null);
-});
-
-test("the cut a box repeats is the closest one, not the first", () => {
-  const near = box(300, 300, 700, 700);
-  const versions = [
-    { id: "wide", cropBox: box(298, 298, 703, 703) },
-    { id: "exact", cropBox: near },
-  ];
-  assert.equal(existingCut(near, versions)?.id, "exact");
-});
-
-test("nothing is repeated when there is no box to compare", () => {
-  const versions = [{ id: "hands", cropBox: box(500, 200, 900, 700) }];
-  assert.equal(existingCut(null, versions), null);
-  assert.equal(existingCut(box(500, 200, 900, 700), undefined), null);
-  assert.equal(existingCut(box(500, 200, 900, 700), [{ id: "old", cropBox: [] }]), null);
-});
-
-test("the cut being adjusted is not the cut the offer repeats", () => {
-  const versions = [
-    { id: "hands", cropBox: box(500, 200, 900, 700) },
-    { id: "sign", cropBox: box(100, 100, 400, 400) },
-  ];
-  assert.equal(existingCut(box(505, 205, 895, 695), versions, { except: "hands" }), null);
-  assert.equal(
-    existingCut(box(102, 98, 398, 402), versions, { except: "hands" })?.id,
-    "sign",
-  );
-  assert.equal(existingCut(box(505, 205, 895, 695), versions)?.id, "hands");
 });
 
 test("an adjustment that did not move the box says so", () => {

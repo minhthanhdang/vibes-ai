@@ -4,7 +4,7 @@ import { drawnFrom, referenceCatalog, referenceDigest, referenceProperties, type
 import { attachmentOf, boardAttachmentOf, type ToolOutcome } from "@/lib/agent/shared/attachments";
 import { PUT_ON_CANVAS, READ_CANVAS, REMOVE_FROM_CANVAS, REORDER_ON_CANVAS, RESTYLE_ON_CANVAS, SET_CANVAS_BACKGROUND, SET_PAGE_BACKGROUND, TRANSFORM_ON_CANVAS } from "@/lib/agent/shared/canvas-tools";
 import { boardLine, boardsList, catalogBrief, currentBoardBrief, projectBrief } from "@/lib/agent/orchestrator/priming";
-import { CROP_REFERENCE, DISCARD_REFERENCE, GENERATE_IMAGE, LIST_REFERENCES, pickReferences, READ_LIMIT, READ_REFERENCES, SHOW_REFERENCES, SHOWN_LIMIT } from "@/lib/agent/orchestrator/reference-tools";
+import { EDIT_REFERENCE, DISCARD_REFERENCE, GENERATE_IMAGE, LIST_REFERENCES, pickReferences, READ_LIMIT, READ_REFERENCES, SHOW_REFERENCES, SHOWN_LIMIT } from "@/lib/agent/orchestrator/reference-tools";
 import { ADD_BOARD, ADD_PAGE, DISCARD_BOARD, DISCARD_PAGE, DUPLICATE_BOARD, DUPLICATE_PAGE, GET_BOARD_BRIEF, INSPECT_BOARD, LIST_BOARDS, MOVE_TO_PAGE, RESIZE_PAGE, REWORD_ON_BOARD, SWAP_ON_BOARD } from "@/lib/agent/orchestrator/board-tools";
 import { DESIGN_PAGE } from "@/lib/agent/orchestrator/handoff-tools";
 import { COMPOSE_MOODBOARD } from "@/lib/agent/orchestrator/deprecated/compose-tools";
@@ -27,6 +27,9 @@ import {
   versionDescendants,
 } from "@/lib/references/reference-version";
 import type { CropRegion } from "@/lib/canvas/moodboard-crop";
+import type { EditOp } from "@/lib/edit/edit-ops";
+import { editSaid } from "@/lib/edit/edit-said";
+import type { EditPreviewing } from "@/server/references/edits";
 import type { Cut } from "@/server/references/cut";
 import type { UploadContentType } from "@/lib/intake/image-types";
 import { storeProjectUpload } from "@/server/references/upload";
@@ -42,7 +45,7 @@ import {
   targetFailed,
   type CropTally,
 } from "@/server/references/tool-crop";
-import { cropReference } from "@/server/agents/cropper/cropper";
+import { editReference } from "@/server/agents/image-editor/image-editor";
 import { generateImage } from "@/server/agents/image-generator/image-generator";
 import { readLayout } from "@/server/agents/deprecated/layout-reader";
 import { type GeneratePart } from "@/server/google/vertex";
@@ -201,16 +204,17 @@ export function referenceToolset({
   projectId,
   currentBoardId,
   compose = composeMoodboard,
-  crop = cropReference,
+  edit = editReference,
   readPage = readLayout,
   design = designPage,
   generate = generateImage,
   storeImage = (contentType: UploadContentType, bytes: Uint8Array) =>
     storeProjectUpload(projectId, contentType, bytes),
-  cutRegion = async (gcsUri: string, region: CropRegion) => {
+  cutRegion = async (gcsUri: string, region: CropRegion, ops?: readonly EditOp[]) => {
     const { cutFromOriginal } = await import("@/server/references/cut");
-    return cutFromOriginal(gcsUri, region);
+    return cutFromOriginal(gcsUri, region, ops);
   },
+  previewEdit,
   kickAnalyzer = () => {
     void import("@/server/agents/analyzer/analysis-queue").then(({ kickAnalyzerWorker }) =>
       kickAnalyzerWorker(),
@@ -232,12 +236,13 @@ export function referenceToolset({
   projectId: string;
   currentBoardId?: string;
   compose?: typeof composeMoodboard;
-  crop?: typeof cropReference;
+  edit?: typeof editReference;
   readPage?: typeof readLayout;
   design?: typeof designPage;
   generate?: typeof generateImage;
   storeImage?: (contentType: UploadContentType, bytes: Uint8Array) => Promise<string>;
-  cutRegion?: (gcsUri: string, region: CropRegion) => Promise<Cut>;
+  cutRegion?: (gcsUri: string, region: CropRegion, ops?: readonly EditOp[]) => Promise<Cut>;
+  previewEdit?: (gcsUri: string) => Promise<EditPreviewing | undefined>;
   kickAnalyzer?: () => void;
   kickThumbnail?: (referenceId: string, bytes: Uint8Array) => void;
   copyRender?: (sourceBoardId: string, targetBoardId: string) => Promise<string>;
@@ -509,14 +514,15 @@ export function referenceToolset({
       framed,
       tally: crops,
       via: "orchestrator",
-      crop,
+      edit,
       cutRegion,
+      ...(previewEdit && { previewEdit }),
       storeImage,
       file: filePicture,
       kickAnalyzer,
     });
     if (cutFailed(making)) return { result: { error: making.error } };
-    const { row, filed, cut } = making;
+    const { row, filed, cut, ops } = making;
 
     const swapped = swapTarget
       ? await boardEditor.swapPictures({
@@ -553,6 +559,7 @@ export function referenceToolset({
           nudgeOf: `${named.id} is untouched — this is that cut moved, filed as a second cut of ${frame.id}. Say it is an adjustment of their cut, and that the old one is still in the versions list to discard if they want it gone`,
         }),
         keeps: cut.editIntent,
+        did: editSaid(ops),
         why: cut.editRationale,
         ...(cut.aspect && { aspect: cut.aspect }),
         ...(framed && {
@@ -608,7 +615,7 @@ export function referenceToolset({
         ...(size ?? {}),
         ...(shape && { aspect: shape.label }),
         ...(offShape && {
-          drawnAt: `${size!.width}×${size!.height}, which is not ${shape!.label} — the drawing model composes at its own canvas sizes. Crop it with crop_reference if the shape has to be exact`,
+          drawnAt: `${size!.width}×${size!.height}, which is not ${shape!.label} — the drawing model composes at its own canvas sizes. Crop it with edit_reference if the shape has to be exact`,
         }),
         status: !size
           ? "drawn and filed in this project, but its pixel size could not be read — it is a reference like any other and the analyzer will read it. Tell the user the picture was made rather than found"
@@ -2196,7 +2203,7 @@ export function referenceToolset({
         case READ_REFERENCES.name:
           return readPictures(args);
 
-        case CROP_REFERENCE.name:
+        case EDIT_REFERENCE.name:
           return boardEdits.run(boardKey(args), () => makeCrop(args));
 
         case GENERATE_IMAGE.name:

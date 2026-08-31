@@ -40,7 +40,7 @@ test("no tool of agent 6's that agent 8 was not given is named", () => {
     "inspect_board",
     "list_references",
     "show_references",
-    "crop_reference",
+    "edit_reference",
     "discard_reference",
     "set_canvas_background",
   ]) {
@@ -50,7 +50,7 @@ test("no tool of agent 6's that agent 8 was not given is named", () => {
 
 test("the tools that make bytes are left to their own declarations", () => {
   assert.ok(!instruction.includes("generate_image"));
-  assert.ok(!instruction.includes("crop_image"));
+  assert.ok(!instruction.includes("edit_image"));
 });
 
 test("no page size is given in pixels outside the one box shown as an example", () => {

@@ -47,12 +47,47 @@ Built for the **All Things Agentic Hackathon** — category **Taskmaster**.
      then time-lapse six blank pages filling themselves in. ~15s, no narration. -->
 ![Vibes](docs/hero.gif)
 
-## Core capabilities
-1. **Comprehensive text-to-design pipeline** - Autonomy to turn user's intention to immediate result.
-2. **Multi-capability Agents team** - 7 agents covering every step from idea to production
-3. **Design assistant** - changing composition, colours, or not sure what seems wrong? Discuss with Vibes assistant to figure out
-4. **Comprehensive AI-native design environment** - Integrated 
-5. **
+## What it does
+
+Vibes AI is a **5-agent design team** on Gemini 3 that turns a brief and a folder
+of photographs into finished, editable pages:
+
+- 🎛 **Orchestrator** (`gemini-3.7-flash`): the only voice in the chat. Holds the
+  other four as tools across **29 calls** — read, crop, generate, place, design —
+  and answers in one reply. Agents don't talk to the user; it does.
+- 🔍 **Property analyzer** (`FLASH` vision): reads every upload the way a director
+  does — colour palette, lighting, texture & grain, composition, subject, contrast
+  & depth. A **fixed vocabulary per dimension**, so tags group instead of drifting.
+  Runs off a queue, so dropping in twenty photos blocks on nothing.
+- ✂️ **Image editor** (`FLASH` + `sharp`): "crop the middle sunflower, square"
+  becomes a detected box, validated in code, cut for real — plus turn, flip, and a
+  five-knob grade. Every cut is filed as a **version linked to its original**,
+  never an overwrite.
+- 🎨 **Image generator** (`gemini-3-pro-image`): when a page wants a paper texture
+  or a dusk wash behind the grid, it makes the picture instead of explaining that
+  it can't.
+- 🖼 **Design assistant** (`FLASH` vision, 12-round tool loop): the one that
+  actually designs. It **renders its own page and looks at it** each round —
+  pictures, type in any Google Fonts family, colour fields, backgrounds, all
+  written as real geometry you can then drag.
+
+Behind them: **54 files of written design expertise** — 37 occupations (wedding,
+banner, album, editorial, concept artist…) and 17 foundations (colour theory,
+grid systems, typography, light and shadow…) — pulled by the design agent on
+demand and returned whole. No model call, no drift.
+
+**Let's Vibes** is the unattended run: one form — purpose, pages, palette, vibe,
+size — and up to **4 briefs × 3 independent takes** go out as jobs a worker picks
+up. Each page is a bounded unit of work, so a failure at page four keeps pages one
+to three, Stop means stop, and a closed tab doesn't kill the run.
+
+**Key innovation: the design agent has eyes on its own work.** Every round, the
+page it is building is rasterised server-side and handed back to it as an image —
+with the same page in words, off one read, so the picture and the description can
+never disagree. It sees the headline it just put over a dark photograph and moves
+it. And because the run's progress is **derived from the board** rather than kept
+in a progress record, it cannot go stale: asking "is anything on this page?" is
+the same question as "was this page designed?"
 
 
 ## Quick start

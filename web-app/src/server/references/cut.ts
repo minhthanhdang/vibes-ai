@@ -12,7 +12,9 @@ import {
   thumbnailBox,
 } from "@/lib/intake/thumbnail";
 import type { UploadContentType } from "@/lib/intake/image-types";
+import type { EditOp } from "@/lib/edit/edit-ops";
 import { readObject } from "@/server/google/storage";
+import { applyEdits } from "@/server/references/edits";
 
 const JPEG_QUALITY = Math.round(CROP_JPEG_QUALITY * 100);
 const THUMBNAIL_QUALITY = Math.round(THUMBNAIL_JPEG_QUALITY * 100);
@@ -62,7 +64,11 @@ export async function thumbnailOf(
   };
 }
 
-export async function cutBytes(source: Uint8Array, region: CropRegion): Promise<Cut> {
+export async function cutBytes(
+  source: Uint8Array,
+  region: CropRegion,
+  ops: readonly EditOp[] = [],
+): Promise<Cut> {
   const image = sharp(source, { autoOrient: true });
   const metadata = await image.metadata();
   const frame = metadata.autoOrient;
@@ -71,16 +77,23 @@ export async function cutBytes(source: Uint8Array, region: CropRegion): Promise<
   const box = croppedPixels(region, frame);
   const contentType = cropOutputType(`image/${metadata.format}`);
   const bytes = await encode(
-    image.extract({ left: box.x, top: box.y, width: box.width, height: box.height }),
+    applyEdits(
+      image.extract({ left: box.x, top: box.y, width: box.width, height: box.height }),
+      ops,
+    ),
     contentType,
   );
 
-  const { thumbnail } = await thumbnailOf(bytes, { width: box.width, height: box.height });
-  return { bytes, contentType, width: box.width, height: box.height, thumbnail };
+  const { thumbnail, width, height } = await thumbnailOf(bytes);
+  return { bytes, contentType, width, height, thumbnail };
 }
 
 export const CUT_SOURCE_BYTE_LIMIT = 100_000_000;
 
-export async function cutFromOriginal(gcsUri: string, region: CropRegion): Promise<Cut> {
-  return cutBytes(await readObject(gcsUri, CUT_SOURCE_BYTE_LIMIT), region);
+export async function cutFromOriginal(
+  gcsUri: string,
+  region: CropRegion,
+  ops: readonly EditOp[] = [],
+): Promise<Cut> {
+  return cutBytes(await readObject(gcsUri, CUT_SOURCE_BYTE_LIMIT), region, ops);
 }

@@ -2,7 +2,7 @@ import {
   CROP_ASPECT_IDS,
   LOOSE_SHAPE_IDS,
 } from "@/lib/references/reference-version";
-import { CROP_CALL_LIMIT, GENERATE_CALL_LIMIT } from "@/lib/agent/orchestrator/reference-tools";
+import { EDIT_CALL_LIMIT, GENERATE_CALL_LIMIT } from "@/lib/agent/orchestrator/reference-tools";
 import type { ToolDeclaration } from "@/lib/agent/shared/tool-declaration";
 
 export const DESIGNER_GENERATE_IMAGE: ToolDeclaration = {
@@ -18,32 +18,32 @@ export const DESIGNER_GENERATE_IMAGE: ToolDeclaration = {
       },
       aspect: {
         type: "STRING",
-        description: `The shape to draw it at, said the two ways crop_image says one. A *format* is a ratio, width:height — ${CROP_ASPECT_IDS.join(", ")} are the usual ones, and any ratio is asked for as said. A *loose* shape is one of ${LOOSE_SHAPE_IDS.join(", ")}, for a shape described without a number. Pass the shape of the box the picture is being drawn for whenever it is being drawn for one, since a backdrop drawn square and stretched across a landscape page is a backdrop nobody can use. Leave it out only when the shape genuinely does not matter, since the drawing model then picks one.`,
+        description: `The shape to draw it at, said the two ways edit_image says one. A *format* is a ratio, width:height — ${CROP_ASPECT_IDS.join(", ")} are the usual ones, and any ratio is asked for as said. A *loose* shape is one of ${LOOSE_SHAPE_IDS.join(", ")}, for a shape described without a number. Pass the shape of the box the picture is being drawn for whenever it is being drawn for one, since a backdrop drawn square and stretched across a landscape page is a backdrop nobody can use. Leave it out only when the shape genuinely does not matter, since the drawing model then picks one.`,
       },
     },
     required: ["description"],
   },
 };
 
-export const CROP_IMAGE: ToolDeclaration = {
-  name: "crop_image",
-  description: `Cut the part of one gallery picture that is the shot you want, and file the cut. It is made in this call, not offered: what comes back is a modification version of the picture with its own id, and put_on_canvas takes that id on the next round of this same turn. The picture it came out of is untouched and stays in the gallery, and discard_image is how a cut nobody wanted goes. Nothing on any board changes — a cut is a new gallery picture rather than a replacement — so put it where you want it yourself, and take the old one off with remove_from_canvas if it is standing there. One picture per call and at most ${CROP_CALL_LIMIT} a turn: crop when a cut is wanted, and pick the one picture it is about.`,
+export const EDIT_IMAGE: ToolDeclaration = {
+  name: "edit_image",
+  description: `Ask for a changed version of one gallery picture and file it. It cuts out the part of the picture you want, turns one that was shot on its side, mirrors it, and grades its colour — brighter, more contrast, warmer, less colour — in any combination, in the one call. It does not draw anything or put two pictures together. The version is made in this call, not offered: what comes back is a modification of the picture with its own id, and put_on_canvas takes that id on the next round of this same turn. The picture it came out of is untouched and stays in the gallery, and discard_image is how a version nobody wanted goes. Nothing on any board changes — a version is a new gallery picture rather than a replacement — so put it where you want it yourself, and take the old one off with remove_from_canvas if it is standing there. One picture per call and at most ${EDIT_CALL_LIMIT} a turn: edit when a changed picture is wanted, and pick the one it is about.`,
   parameters: {
     type: "OBJECT",
     properties: {
       imageId: {
         type: "STRING",
         description:
-          "The picture to cut, by an id from list_gallery. Give the id of a *modification* when a cut you already have wants changing — wider, tighter, more headroom: that is asked of the picture it came out of with its box attached, so the answer moves that cut instead of taking a smaller piece out of it, and it keeps the shape it was made at unless a new one is named.",
+          "The picture to edit, by an id from list_gallery. Give the id of a *modification* when a cut you already have wants changing — wider, tighter, more headroom: that is asked of the picture it came out of with its box attached, so the answer moves that cut instead of taking a smaller piece out of it, and it keeps the shape it was made at unless a new one is named.",
       },
       intention: {
         type: "STRING",
         description:
-          "What the cut has to hold — the subject, the part of it, the shot. Not a description of the whole photograph.",
+          "The whole of what has to change about this picture, in words — “just the sign, warmer”, “it's on its side”, “tighter on her hands and less blue”. Say the framing and the look and the way up together in the one line, since this is all the editor is given; it reads the picture itself and decides what to do to it. Not a description of the whole photograph, and not your own numbers.",
       },
       aspect: {
         type: "STRING",
-        description: `The shape to hold the cut to, said one of two ways. A *format* is a ratio, width:height — ${CROP_ASPECT_IDS.join(", ")} are the usual ones, but any ratio is cut exactly as said, "5:4" for a print, "2.35:1" for that scope. A *loose* shape is one of ${LOOSE_SHAPE_IDS.join(", ")}, and it is what to pass for a shape said without a number — "make it square", "a tall one", "not so wide": the cut is framed that way around the subject instead of being held to a ratio nobody asked for. Leave it out to frame around the subject, which is the right answer for a picture that is not being fitted to anything.`,
+        description: `The shape to hold the *cut* to, when one is wanted — this is about framing and says nothing about the rest of the edit. Said one of two ways. A *format* is a ratio, width:height — ${CROP_ASPECT_IDS.join(", ")} are the usual ones, but any ratio is cut exactly as said, "5:4" for a print, "2.35:1" for that scope. A *loose* shape is one of ${LOOSE_SHAPE_IDS.join(", ")}, and it is what to pass for a shape said without a number — "make it square", "a tall one", "not so wide": the cut is framed that way around the subject instead of being held to a ratio nobody asked for. Leave it out to frame around the subject, which is the right answer for a picture that is not being fitted to anything.`,
       },
       toObjectId: {
         type: "STRING",
@@ -55,4 +55,4 @@ export const CROP_IMAGE: ToolDeclaration = {
   },
 };
 
-export const IMAGE_TOOLS: ToolDeclaration[] = [DESIGNER_GENERATE_IMAGE, CROP_IMAGE];
+export const IMAGE_TOOLS: ToolDeclaration[] = [DESIGNER_GENERATE_IMAGE, EDIT_IMAGE];

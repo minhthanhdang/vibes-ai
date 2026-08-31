@@ -12,7 +12,7 @@ export type ReferenceRow = {
   width: number | null;
   height: number | null;
   editIntent: string;
-  editAspect: string;
+  edit: unknown;
   isFavorite: boolean;
   origin: ReferenceOrigin;
   gcsUri: string;
@@ -38,8 +38,7 @@ export const TOOL_REFERENCE_SELECT = {
   width: true,
   height: true,
   editIntent: true,
-  editAspect: true,
-  cropBox: true,
+  edit: true,
   isFavorite: true,
   origin: true,
   generationPrompt: true,

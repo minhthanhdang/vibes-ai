@@ -2,7 +2,7 @@ import "server-only";
 import type { PrismaClient } from "@/generated/prisma/client";
 import { AgentKind, RunStatus } from "@/generated/prisma/enums";
 import type { ToolReference } from "@/lib/agent/shared/reference";
-import { CROP_CALL_LIMIT, cropCeilingSaid } from "@/lib/agent/orchestrator/reference-tools";
+import { EDIT_CALL_LIMIT, editCeilingSaid } from "@/lib/agent/orchestrator/reference-tools";
 import { spentColumns, spentThrown } from "@/lib/agent/shared/model-cost";
 import type { CropRegion } from "@/lib/canvas/moodboard-crop";
 import { cropNudge, cropOffer, unfittableAspect, type CropOffer } from "@/lib/crop/crop-offer";
@@ -17,7 +17,10 @@ import {
   type CropShape,
   type LooseShape,
 } from "@/lib/references/reference-version";
-import { cropReference } from "@/server/agents/cropper/cropper";
+import { cropEdit } from "@/lib/references/reference-edit";
+import type { EditOp } from "@/lib/edit/edit-ops";
+import type { EditPreviewing } from "@/server/references/edits";
+import { editReference } from "@/server/agents/image-editor/image-editor";
 import type { Cut } from "@/server/references/cut";
 import { fileVersion } from "@/server/references/file-version";
 import { isObjectTooLarge } from "@/server/google/storage";
@@ -95,6 +98,7 @@ export type CutMade = {
   row: ReferenceRow;
   filed: ToolReference;
   cut: CropOffer;
+  ops: EditOp[];
 };
 
 export type CutMaking = { error: string } | CutMade;
@@ -111,10 +115,15 @@ export async function makeCut({
   framed,
   tally,
   via,
-  crop = cropReference,
-  cutRegion = async (gcsUri: string, region: CropRegion) => {
+  edit = editReference,
+  cutRegion = async (gcsUri: string, region: CropRegion, ops?: readonly EditOp[]) => {
     const { cutFromOriginal } = await import("@/server/references/cut");
-    return cutFromOriginal(gcsUri, region);
+    return cutFromOriginal(gcsUri, region, ops);
+  },
+  previewEdit = async (gcsUri: string) => {
+    const { previewFromOriginal } = await import("@/server/references/edits");
+    const { CUT_SOURCE_BYTE_LIMIT } = await import("@/server/references/cut");
+    return previewFromOriginal(gcsUri, CUT_SOURCE_BYTE_LIMIT);
   },
   storeImage,
   file,
@@ -127,14 +136,15 @@ export async function makeCut({
   framed: LooseShape | null;
   tally: CropTally;
   via: string;
-  crop?: typeof cropReference;
-  cutRegion?: (gcsUri: string, region: CropRegion) => Promise<Cut>;
+  edit?: typeof editReference;
+  cutRegion?: (gcsUri: string, region: CropRegion, ops?: readonly EditOp[]) => Promise<Cut>;
+  previewEdit?: (gcsUri: string) => Promise<EditPreviewing | undefined>;
   storeImage: (contentType: UploadContentType, bytes: Uint8Array) => Promise<string>;
   file: (row: ReferenceRow) => ToolReference;
   kickAnalyzer: () => void;
 }): Promise<CutMaking> {
-  if (tally.asked >= CROP_CALL_LIMIT) {
-    return { error: cropCeilingSaid(tally.asked, tally.filed) };
+  if (tally.asked >= EDIT_CALL_LIMIT) {
+    return { error: editCeilingSaid(tally.asked, tally.filed) };
   }
   tally.asked += 1;
 
@@ -164,13 +174,15 @@ export async function makeCut({
 
   let answer;
   try {
-    answer = await crop({
+    const preview = await previewEdit(frame.gcsUri);
+    answer = await edit({
       gcsUri: frame.gcsUri,
       prompt: intention,
       title: frame.title,
       ...(held && { aspect: held }),
       ...(framed && { loose: framed, frame }),
       ...(nudge && { previous: nudge.previous }),
+      ...(preview && { preview }),
     });
   } catch (cause) {
     return fail(
@@ -185,17 +197,18 @@ export async function makeCut({
     intent: answer.intent,
     rationale: answer.rationale,
     aspect: held,
+    ops: answer.ops,
     ...(framed && { loose: framed.id }),
   });
   const spent = spentColumns(answer.model, answer.usage);
   if ("refused" in offered) return fail(offered.refused, spent);
 
   const cut = offered.offer;
-  const cropBox = cropBoxOf(cut.cropBox)!;
+  const pixelOps = answer.ops.filter((op) => op.op !== "crop");
 
   let pixels: Cut;
   try {
-    pixels = await cutRegion(frame.gcsUri, cut.region);
+    pixels = await cutRegion(frame.gcsUri, cut.region, pixelOps);
   } catch (cause) {
     console.error("a cut could not be made:", cause);
     return fail(
@@ -235,8 +248,7 @@ export async function makeCut({
           thumbGcsUri,
           editIntent: cut.editIntent,
           editRationale: cut.editRationale,
-          cropBox,
-          editAspect: cut.aspect ?? cut.loose,
+          edit: [...cropEdit(cropBoxOf(cut.cropBox)!, cut.aspect ?? cut.loose), ...pixelOps],
           width: pixels.width,
           height: pixels.height,
           contentHash,
@@ -267,11 +279,13 @@ export async function makeCut({
         ...(nudge && { nudgeOf: named.id }),
         model: answer.model,
         attempts: answer.attempts,
+        looks: answer.looks,
+        ops: answer.ops,
       },
       finishedAt: new Date(),
       ...spent,
     },
   });
 
-  return { row, filed, cut };
+  return { row, filed, cut, ops: answer.ops };
 }

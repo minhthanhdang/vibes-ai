@@ -32,7 +32,7 @@ const CUTS = `The list is the photographs only — call list_references when the
 them matter as well, and they come back with the photographs.`;
 
 const CROPPING = `When the user wants part of a frame — a tighter shot, the subject alone, this
-one at scope — call crop_reference on that one reference. It cuts the picture and
+one at scope — call edit_reference on that one reference. It cuts the picture and
 files the cut: what comes back is a new reference in the project, shown beside
 your reply, and the frame it came out of is untouched. So say what the cut keeps
 and that it is theirs now, and offer the way back in the same sentence —

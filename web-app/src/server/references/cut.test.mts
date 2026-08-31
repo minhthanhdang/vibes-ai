@@ -228,3 +228,153 @@ test("the grid copy is a copy of the cut and not of the frame", async () => {
   assert.ok(marked.thumbnail);
   assert.ok(isGreen(await pixel(marked.thumbnail.bytes, 5, 5)), "and green where the cut is");
 });
+
+test("an empty list of edits is the cut nothing was asked of", async () => {
+  const source = await frame(400, 200, "jpeg");
+  const region = { x: 0, y: 0, width: 0.5, height: 0.5 };
+
+  const plain = await cutBytes(source, region);
+  const asked = await cutBytes(source, region, []);
+  assert.deepEqual(Buffer.from(asked.bytes), Buffer.from(plain.bytes));
+});
+
+test("a quarter turn swaps the edges on the row and in the bytes alike", async () => {
+  const cut = await cutBytes(await frame(400, 400, "jpeg"), {
+    x: 0,
+    y: 0,
+    width: 0.25,
+    height: 0.5,
+  }, [{ op: "turn", turn: "right" }]);
+
+  assert.deepEqual({ width: cut.width, height: cut.height }, { width: 200, height: 100 });
+  const size = await sharp(cut.bytes).metadata();
+  assert.deepEqual({ width: size.width, height: size.height }, { width: 200, height: 100 });
+});
+
+test("a half turn leaves the edges where they were", async () => {
+  const cut = await cutBytes(await frame(400, 400, "jpeg"), {
+    x: 0,
+    y: 0,
+    width: 0.25,
+    height: 0.5,
+  }, [{ op: "turn", turn: "upside-down" }]);
+
+  assert.deepEqual({ width: cut.width, height: cut.height }, { width: 100, height: 200 });
+});
+
+test("a right turn carries the marked corner from the top left to the top right", async () => {
+  const whole = { x: 0, y: 0, width: 1, height: 1 };
+  const cut = await cutBytes(await frame(200, 200, "png"), whole, [
+    { op: "turn", turn: "right" },
+  ]);
+
+  assert.ok(isGreen(await pixel(cut.bytes, 197, 1)), "the marker turned to the top right");
+  assert.ok(!isGreen(await pixel(cut.bytes, 1, 1)), "and is no longer at the top left");
+});
+
+test("a left turn carries it to the bottom left instead", async () => {
+  const cut = await cutBytes(await frame(200, 200, "png"), { x: 0, y: 0, width: 1, height: 1 }, [
+    { op: "turn", turn: "left" },
+  ]);
+
+  assert.ok(isGreen(await pixel(cut.bytes, 1, 197)), "the marker turned to the bottom left");
+});
+
+test("a horizontal flip is left to right, not top to bottom", async () => {
+  const whole = { x: 0, y: 0, width: 1, height: 1 };
+  const source = await frame(200, 200, "png");
+
+  const flopped = await cutBytes(source, whole, [{ op: "flip", axis: "horizontal" }]);
+  assert.ok(isGreen(await pixel(flopped.bytes, 197, 1)), "the marker crossed to the top right");
+
+  const flipped = await cutBytes(source, whole, [{ op: "flip", axis: "vertical" }]);
+  assert.ok(isGreen(await pixel(flipped.bytes, 1, 197)), "and the other axis to the bottom left");
+});
+
+test("flipping both ways is the same picture as turning it upside down", async () => {
+  const whole = { x: 0, y: 0, width: 1, height: 1 };
+  const source = await frame(200, 100, "png");
+
+  const flipped = await cutBytes(source, whole, [{ op: "flip", axis: "both" }]);
+  const turned = await cutBytes(source, whole, [{ op: "turn", turn: "upside-down" }]);
+  assert.deepEqual(Buffer.from(flipped.bytes), Buffer.from(turned.bytes));
+});
+
+test("a grade at the bottom of the saturation knob greys the field out", async () => {
+  const whole = { x: 0, y: 0, width: 1, height: 1 };
+  const source = await frame(200, 100, "png");
+
+  const grey = await cutBytes(source, whole, [
+    { op: "grade", brightness: 0, contrast: 0, saturation: -100, warmth: 0, hue: 0 },
+  ]);
+  const [r, g, b] = await pixel(grey.bytes, 100, 50);
+  assert.ok(Math.abs(r! - g!) < 6 && Math.abs(g! - b!) < 6, `the red field is still ${r},${g},${b}`);
+
+  const plain = await cutBytes(source, whole);
+  const [red, green] = await pixel(plain.bytes, 100, 50);
+  assert.ok(red! - green! > 100, "and it was red before the grade");
+});
+
+test("warmth lifts the red channel and drops the blue one", async () => {
+  const whole = { x: 0, y: 0, width: 1, height: 1 };
+  const grey = (hex: string) =>
+    sharp({ create: { width: 40, height: 40, channels: 3, background: hex } })
+      .png()
+      .toBuffer()
+      .then((bytes) => new Uint8Array(bytes));
+  const warmth = (knob: number) =>
+    ({ op: "grade", brightness: 0, contrast: 0, saturation: 0, warmth: knob, hue: 0 }) as const;
+
+  const light = await cutBytes(await grey("#c0c0c0"), whole, [warmth(100)]);
+  const [r, , b] = await pixel(light.bytes, 20, 20);
+  assert.ok(r! > 192 && b! < 192, `a light grey warmed to ${r},${b}`);
+
+  const cooled = await cutBytes(await grey("#c0c0c0"), whole, [warmth(-100)]);
+  const [red, , blue] = await pixel(cooled.bytes, 20, 20);
+  assert.ok(red! < 192 && blue! > 192, `and cooled to ${red},${blue}`);
+});
+
+test("warmth pivots on mid-grey exactly as contrast does, so it splits the tones", async () => {
+  const whole = { x: 0, y: 0, width: 1, height: 1 };
+  const source = new Uint8Array(
+    await sharp({ create: { width: 40, height: 40, channels: 3, background: "#808080" } })
+      .png()
+      .toBuffer(),
+  );
+
+  const warm = await cutBytes(source, whole, [
+    { op: "grade", brightness: 0, contrast: 0, saturation: 0, warmth: 100, hue: 0 },
+  ]);
+  const [r, g, b] = await pixel(warm.bytes, 20, 20);
+  for (const channel of [r, g, b]) {
+    assert.ok(Math.abs(channel! - 128) <= 1, `mid-grey moved to ${channel}`);
+  }
+});
+
+test("contrast pivots on mid-grey rather than on black", async () => {
+  const whole = { x: 0, y: 0, width: 1, height: 1 };
+  const source = new Uint8Array(
+    await sharp({ create: { width: 40, height: 40, channels: 3, background: "#808080" } })
+      .png()
+      .toBuffer(),
+  );
+
+  const punchy = await cutBytes(source, whole, [
+    { op: "grade", brightness: 0, contrast: 60, saturation: 0, warmth: 0, hue: 0 },
+  ]);
+  const [r, g, b] = await pixel(punchy.bytes, 20, 20);
+  for (const channel of [r, g, b]) {
+    assert.ok(Math.abs(channel! - 128) <= 1, `mid-grey moved to ${channel}`);
+  }
+});
+
+test("a turn and a grade in one list are both in the bytes", async () => {
+  const cut = await cutBytes(await frame(200, 100, "png"), { x: 0, y: 0, width: 1, height: 1 }, [
+    { op: "turn", turn: "right" },
+    { op: "grade", brightness: 0, contrast: 0, saturation: -100, warmth: 0, hue: 0 },
+  ]);
+
+  assert.deepEqual({ width: cut.width, height: cut.height }, { width: 100, height: 200 });
+  const [r, g, b] = await pixel(cut.bytes, 50, 100);
+  assert.ok(Math.abs(r! - g!) < 6 && Math.abs(g! - b!) < 6, "and the field is grey");
+});

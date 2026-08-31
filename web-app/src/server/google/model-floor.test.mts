@@ -13,7 +13,7 @@ const IMAGE = "IMAGE";
 const AGENTS = [
   "src/server/agents/orchestrator/orchestrator.ts",
   "src/server/agents/analyzer/analyzer.ts",
-  "src/server/agents/cropper/cropper.ts",
+  "src/server/agents/image-editor/image-editor.ts",
   "src/server/agents/deprecated/compositor.ts",
   "src/server/agents/deprecated/layout-reader.ts",
 ];

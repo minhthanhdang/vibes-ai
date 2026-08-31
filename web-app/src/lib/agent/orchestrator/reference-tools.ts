@@ -103,28 +103,28 @@ export function discardReferenceFor({ crops, boards }: ProjectState): ToolDeclar
 
 export const DISCARD_REFERENCE = discardReferenceFor(EVERYTHING);
 
-export const CROP_CALL_LIMIT = COMPOSE_BLOCK_LIMIT;
+export const EDIT_CALL_LIMIT = COMPOSE_BLOCK_LIMIT;
 
-export function cropCeilingSaid(asked: number, filed: number) {
-  const attempts = `${asked} ${asked === 1 ? "cut" : "cuts"}`;
+export function editCeilingSaid(asked: number, filed: number) {
+  const attempts = `${asked} ${asked === 1 ? "edit" : "edits"}`;
   if (filed <= 0)
-    return `you have asked for ${attempts} this turn and none of them could be cut — tell the user what went wrong rather than asking for another`;
+    return `you have asked for ${attempts} this turn and none of them could be made — tell the user what went wrong rather than asking for another`;
   if (filed < asked)
-    return `you have asked for ${attempts} this turn and ${filed} of them ${filed === 1 ? "was" : "were"} filed — that is this turn's last crop, so tell the user which cuts they have and stop cropping`;
-  return `you have already filed ${attempts} this turn, which is all this turn may cut — tell the user what you cut and stop cropping`;
+    return `you have asked for ${attempts} this turn and ${filed} of them ${filed === 1 ? "was" : "were"} filed — that is this turn's last edit, so tell the user which pictures they have and stop editing`;
+  return `you have already filed ${attempts} this turn, which is all this turn may edit — tell the user what you did and stop editing`;
 }
 
-export function cropReferenceFor({ crops, boards }: ProjectState): ToolDeclaration {
+export function editReferenceFor({ crops, boards }: ProjectState): ToolDeclaration {
   return {
-    name: "crop_reference",
-    description: `Ask the cropper for the part of one reference that is the shot the user described, and file it. The cut is made and filed as a new reference of this project, shown to the user beside your reply; the frame it came out of is untouched and stays where it is, and discard_reference is how a cut nobody wanted goes. The id it answers with can be given to another tool on the next round of this same turn. One reference per call and at most ${CROP_CALL_LIMIT} a turn: crop when a cut is asked for, and pick the one frame it is about.`,
+    name: "edit_reference",
+    description: `Ask the image editor for a changed version of one reference and file it. It cuts out the part of the frame the user described, turns a photograph that was shot on its side, mirrors it, and grades its colour — brighter, more contrast, warmer, less colour — in any combination, in the one call. It does not draw anything, take anything out of a picture, or put two pictures together. The version is made and filed as a new reference of this project, shown to the user beside your reply; the picture it came out of is untouched and stays where it is, and discard_reference is how a version nobody wanted goes. The id it answers with can be given to another tool on the next round of this same turn. One reference per call and at most ${EDIT_CALL_LIMIT} a turn: edit when a change to a picture is asked for, and pick the one picture it is about.`,
     parameters: {
       type: "OBJECT",
       properties: {
         referenceId: {
           type: "STRING",
           description: [
-            `The reference to cut, by an id from ${idsFrom(crops)}.`,
+            `The reference to edit, by an id from ${idsFrom(crops)}.`,
             crops > 0
               ? "Give the id of a *cut* when the user wants a cut they already have changed — wider, tighter, more headroom: that is asked of the frame it came out of with its box attached, so the answer moves their cut instead of taking a smaller piece out of it, and it keeps the shape that cut was made at unless a new one is named."
               : "",
@@ -135,11 +135,11 @@ export function cropReferenceFor({ crops, boards }: ProjectState): ToolDeclarati
         intention: {
           type: "STRING",
           description:
-            "What the user wants out of the frame, in their own words — the subject, the part of it, the shot. Not a description of the whole photograph.",
+            "The whole of what the user wants done to this picture, in their own words — “just the sign, and warmer”, “it's on its side”, “tighter on her hands”, “too blue”. Say the framing and the look and the way up together in the one line, since this is all the editor is given; it reads the picture itself and decides what to do to it. Not a description of the whole photograph, and not your own numbers.",
         },
         aspect: {
           type: "STRING",
-          description: `The shape the user asked for, said one of two ways. A *format* is a ratio, width:height — ${CROP_ASPECT_IDS.join(", ")} are the usual ones, but any ratio they name is cut exactly as said, "5:4" for a print, "2.35:1" for that scope. A *loose* shape is one of ${LOOSE_SHAPE_IDS.join(", ")}, and it is what to pass when they described a shape without naming a number — "make it square", "a tall one", "not so wide": the cut is framed that way around the subject instead of being cut to a ratio they did not ask for. Pass what they asked for rather than the nearest of the usual formats. Leave it out to frame around the subject, which is the right answer for a reference nobody is composing to a shape.`,
+          description: `The shape to hold the *cut* to, when the user asked for one — this is about framing and says nothing about the rest of the edit. Said one of two ways. A *format* is a ratio, width:height — ${CROP_ASPECT_IDS.join(", ")} are the usual ones, but any ratio they name is cut exactly as said, "5:4" for a print, "2.35:1" for that scope. A *loose* shape is one of ${LOOSE_SHAPE_IDS.join(", ")}, and it is what to pass when they described a shape without naming a number — "make it square", "a tall one", "not so wide": the cut is framed that way around the subject instead of being cut to a ratio they did not ask for. Pass what they asked for rather than the nearest of the usual formats. Leave it out to frame around the subject, which is the right answer for a reference nobody is composing to a shape.`,
         },
         ...(boards > 0
           ? {
@@ -161,7 +161,7 @@ export function cropReferenceFor({ crops, boards }: ProjectState): ToolDeclarati
   };
 }
 
-export const CROP_REFERENCE = cropReferenceFor(EVERYTHING);
+export const EDIT_REFERENCE = editReferenceFor(EVERYTHING);
 
 export const GENERATE_CALL_LIMIT = 2;
 
@@ -213,7 +213,7 @@ export function generateImageFor({
         aspect: {
           type: "STRING",
           description: [
-            `The shape to draw it at${pictures > 0 ? ", said the two ways crop_reference says one" : ""}. A *format* is a ratio, width:height — ${CROP_ASPECT_IDS.join(", ")} are the usual ones, and any ratio the user names is asked for as said. A *loose* shape is one of ${LOOSE_SHAPE_IDS.join(", ")}, for when they described a shape without naming a number.`,
+            `The shape to draw it at${pictures > 0 ? ", said the two ways edit_reference says one" : ""}. A *format* is a ratio, width:height — ${CROP_ASPECT_IDS.join(", ")} are the usual ones, and any ratio the user names is asked for as said. A *loose* shape is one of ${LOOSE_SHAPE_IDS.join(", ")}, for when they described a shape without naming a number.`,
             boards > 0
               ? "Pass the shape of the page or the slot the picture is for whenever it is being made for one, since a background drawn square and stretched across a landscape page is a background nobody can use."
               : "Pass the shape the picture has to fill whenever it is being made for one, since the shape is the one thing about a background that cannot be fixed afterwards.",

@@ -110,7 +110,6 @@ export function galleryToolset({
     const version: ModificationReference = {
       ...reference,
       editRationale: row.editRationale,
-      cropBox: row.cropBox,
     };
 
     return withPicture(

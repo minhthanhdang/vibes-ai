@@ -1,11 +1,6 @@
 import { ReferenceOrigin } from "@/generated/prisma/enums";
 import { CAPTION_MAX_LENGTH } from "@/lib/canvas/moodboard-caption";
-import {
-  CROP_MIN_TRIM,
-  croppedPixels,
-  croppedReferenceTitle,
-  type CropRegion,
-} from "@/lib/canvas/moodboard-crop";
+import { CROP_MIN_TRIM, croppedPixels, type CropRegion } from "@/lib/canvas/moodboard-crop";
 import { DROPPED_IMAGE_MAX_EDGE } from "@/lib/canvas/moodboard-drop";
 import { BOARD_IMAGE_PIXEL_RATIO } from "@/lib/scene/moodboard-resolution";
 
@@ -42,7 +37,7 @@ export function cropBoxColumns(box: CropBox): number[] {
   return [box.ymin, box.xmin, box.ymax, box.xmax];
 }
 
-function boxRegion(box: CropBox): CropRegion {
+export function boxRegion(box: CropBox): CropRegion {
   return {
     x: box.xmin / CROP_BOX_SCALE,
     y: box.ymin / CROP_BOX_SCALE,
@@ -326,7 +321,7 @@ export function cropBoxAtAspect(
 
 export const SAME_CUT_OVERLAP = 0.95;
 
-function boxOverlap(a: CropBox, b: CropBox): number {
+export function boxOverlap(a: CropBox, b: CropBox): number {
   const shared =
     Math.max(0, Math.min(a.ymax, b.ymax) - Math.max(a.ymin, b.ymin)) *
     Math.max(0, Math.min(a.xmax, b.xmax) - Math.max(a.xmin, b.xmin));
@@ -335,28 +330,6 @@ function boxOverlap(a: CropBox, b: CropBox): number {
   const area = (box: CropBox) => (box.ymax - box.ymin) * (box.xmax - box.xmin);
   const union = area(a) + area(b) - shared;
   return union > 0 ? shared / union : 0;
-}
-
-export function existingCut<Version extends { id?: string; cropBox?: unknown }>(
-  columns: unknown,
-  versions: readonly Version[] | undefined,
-  { except }: { except?: string | null } = {},
-): Version | null {
-  const offered = cropBoxOf(columns);
-  if (!offered || !versions) return null;
-
-  let best: { version: Version; overlap: number } | null = null;
-  for (const version of versions) {
-    if (except && version.id === except) continue;
-    const filed = cropBoxOf(version.cropBox);
-    if (!filed) continue;
-
-    const overlap = boxOverlap(offered, filed);
-    if (overlap >= SAME_CUT_OVERLAP && (!best || overlap > best.overlap)) {
-      best = { version, overlap };
-    }
-  }
-  return best?.version ?? null;
 }
 
 export function sameCut(columns: unknown, other: unknown): boolean {
@@ -476,23 +449,11 @@ export function versionDescendants(
 
 export function versionCountLabel(count: number | undefined) {
   if (typeof count !== "number" || !Number.isFinite(count) || count < 1) return null;
-  const cuts = Math.floor(count);
-  return cuts === 1 ? "1 crop" : `${cuts} crops`;
+  const made = Math.floor(count);
+  return made === 1 ? "1 version" : `${made} versions`;
 }
 
-export function versionCredit(reference: {
-  editIntent?: string | null;
-  source?: { title?: string | null } | null;
-}) {
-  if (!reference.source) return null;
-
-  const frame = (reference.source.title ?? "").trim();
-  const asked = editIntent(reference.editIntent ?? "");
-  const from = `Cropped from ${frame ? `“${frame}”` : "the original"}`;
-  return asked ? `${from}${CREDIT_JOIN}${asked}` : from;
-}
-
-const CREDIT_JOIN = " — ";
+export const CREDIT_JOIN = " — ";
 
 const CAPTION_FRAME_MIN = 12;
 
@@ -516,37 +477,6 @@ export function referenceCaption(reference: {
   return room >= CAPTION_FRAME_MIN
     ? `${frame.slice(0, room - 1).trimEnd()}…${CREDIT_JOIN}${keeps}`
     : keeps;
-}
-
-export type CropPlan = {
-  region: CropRegion;
-  title: string;
-  editIntent: string;
-  editRationale: string;
-  cropBox: number[];
-};
-
-export function cropPlan({
-  box,
-  intent,
-  rationale = "",
-  sourceTitle,
-}: {
-  box: CropBox;
-  intent: string;
-  rationale?: string;
-  sourceTitle: string;
-}): CropPlan | null {
-  const region = cropRegionOfBox(box);
-  if (!region) return null;
-
-  return {
-    region,
-    title: croppedReferenceTitle(sourceTitle),
-    editIntent: editIntent(intent),
-    editRationale: editRationale(rationale),
-    cropBox: cropBoxColumns(box),
-  };
 }
 
 export function versionOrigin(source: { origin?: ReferenceOrigin | null }): ReferenceOrigin {

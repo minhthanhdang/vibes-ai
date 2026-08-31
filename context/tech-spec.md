@@ -362,7 +362,7 @@ model in the path, and what agent 8 sorts a gallery by.
 Runs per upload, fanned out across a batch. This is now the first model to see
 an image and the main latency sink — see infra §X on backoff.
 
-### 3. Cropper — `FLASH` + Pillow
+### 3. Image editor — `FLASH` + sharp — widened 2026-09-01
 
 Called only by the orchestrator, as an `AgentTool`. The orchestrator infers
 the inputs from the user's message:
@@ -419,6 +419,49 @@ user framing a crop by hand is choosing a box and wants to see it first. What
 filing a cut nobody wanted costs, how that is paid for, and the five places the
 build decided differently from the design are
 `orchestrator-tool-reference.md` §IV.
+
+**It is no longer only a cropper — widened 2026-09-01.** The invariant above is
+what made the widening cheap: the model answers with numbers and `sharp` does the
+pixels, so adding an op is adding a small structured field, not a new capability.
+The agent moved to `src/server/agents/image-editor/`, the door is `editReference`
+and the tool is `edit_reference` (`edit_image` on the designer). One model call
+answers with an ordered *list* of edits rather than one box:
+
+    [{ op: "crop", box, shape? }, { op: "turn" }, { op: "flip" }, { op: "grade" }]
+
+at most one of each, always in that order. `src/lib/edit/edit-ops.ts` is the whole
+vocabulary and the validator; `src/server/references/edits.ts` is the only new
+sharp importer. Turns are quarter turns said as words (`left`/`right`/
+`upside-down`) because sharp's `rotate` is clockwise and humans say "rotate left";
+grade knobs are zero-centred integers (−100…100, hue −180…180) so that "leave it
+alone" is 0 on every knob, which is why `gamma` is not in the vocabulary.
+
+The crop is first and the order is canonical for three reasons: a box after a turn
+is in post-transform coordinates and every overlay would mis-draw it; sharp
+reorders anyway (`flip`/`flop` are documented to happen after rotation); and
+nothing is lost, because quarter turns and axis flips form D4, so a flip written
+before a turn is re-expressible as that turn followed by the other axis. A crop
+that is not first is a fault; a shuffled turn/flip/grade is silently canonicalised.
+
+Only a grade earns a second look. A turn and a flip are exact and a crop is already
+checked deterministically and shown to the user, but a grade's result cannot be
+predicted from its own numbers — so when the accepted list contains one, the agent
+renders a ≤768px JPEG preview of the edit and asks again, at most `EDIT_LOOKS = 2`
+times. The preview reaches the model as `inlineData` and is never filed: storing it
+would put bytes in the bucket the user may never see. Four rules hold the loop
+down — a preview that cannot be made means the planned edit simply stands
+(`looks` is 0), a fault on a look is swallowed rather than re-prompted, the crop is
+not re-openable (the planned crop is re-inserted at the head in code), and the last
+look says it is the last. The median edit therefore costs exactly what a crop costs
+today; only grading pays. The preview is cut from the model's own box rather than
+the aspect-fitted one, so it is judged for colour and not for framing.
+
+The row storage moved with it: `cropBox Int[]` and `editAspect String` became one
+`edit Json @default("[]")` (migration `20260901120000_reference_edit_ops`, which
+backfills every existing crop into a one-op list). `editIntent` and `editRationale`
+stay columns — `relabelVersion` is an atomic column update that would otherwise
+become a read-modify-write racing the crop path. `AgentKind.CROPPER` deliberately
+stays; see `Metering.md`.
 
 ### 4. Moodboard compositor — retired 2026-08-24
 

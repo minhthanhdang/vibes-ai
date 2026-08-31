@@ -9,7 +9,6 @@ import {
   cropBoxColumns,
   cropBoxOf,
   cropCoverageLabel,
-  cropPlan,
   cropShapeMeasured,
   cropShapeOf,
   cropSizeLabel,
@@ -18,6 +17,8 @@ import {
   shapeAsked,
   type CropBox,
 } from "@/lib/references/reference-version";
+import { cropPlan, editBox, editShape } from "@/lib/references/reference-edit";
+import { quarterTurned, type EditOp } from "@/lib/edit/edit-ops";
 
 export type CropOffer = {
   referenceId: string;
@@ -29,27 +30,18 @@ export type CropOffer = {
   loose?: string;
 };
 
-export function cropNudge(cut: {
-  id: string;
-  cropBox?: unknown;
-  editIntent?: string | null;
-  editAspect?: string | null;
-}) {
-  const box = cropBoxOf(cut.cropBox);
+export function cropNudge(cut: { id: string; edit?: unknown; editIntent?: string | null }) {
+  const box = cropBoxOf(editBox(cut.edit));
   if (!box) return null;
 
   const columns = cropBoxColumns(box);
   const editIntent = cut.editIntent?.trim() ?? "";
-  const asked = shapeAsked(cut.editAspect);
+  const asked = shapeAsked(editShape(cut.edit));
+  const shape = asked?.shape?.label ?? asked?.loose?.id ?? null;
   return {
     previous: { cropBox: columns, editIntent },
-    asked: asked ? (asked.shape?.label ?? asked.loose?.id ?? null) : null,
-    origin: {
-      id: cut.id,
-      cropBox: columns,
-      editIntent,
-      ...(asked && { editAspect: asked.shape?.label ?? asked.loose?.id }),
-    },
+    asked: shape,
+    origin: { id: cut.id, edit: cut.edit, editIntent },
   };
 }
 
@@ -113,6 +105,7 @@ export function cropOffer({
   rationale = "",
   aspect,
   loose,
+  ops = [],
 }: {
   reference: { id: string; title: string; width?: number | null; height?: number | null };
   box: CropBox;
@@ -120,16 +113,18 @@ export function cropOffer({
   rationale?: string;
   aspect?: unknown;
   loose?: string;
+  ops?: readonly EditOp[];
 }): CropOfferResult {
   const held = cropShapeOf(aspect);
   const unfittable = unfittableAspect(reference, held?.label);
   if (unfittable) return { refused: unfittable };
   const framed = held ? null : looseShapeOf(loose);
 
-  const fitted = held ? cropBoxAtAspect(cropBoxColumns(box), reference, held.ratio) : box;
-  if (!fitted) return { refused: `the cropper's box could not be held to ${held?.label}` };
+  const ratio = held && (quarterTurned(ops) ? 1 / held.ratio : held.ratio);
+  const fitted = ratio ? cropBoxAtAspect(cropBoxColumns(box), reference, ratio) : box;
+  if (!fitted) return { refused: `the image editor's box could not be held to ${held?.label}` };
 
-  const plan = cropPlan({ box: fitted, intent, rationale, sourceTitle: reference.title });
+  const plan = cropPlan({ box: fitted, intent, rationale, sourceTitle: reference.title, ops });
   if (!plan) {
     return { refused: "the whole frame is the shot — there is nothing to crop out of it" };
   }

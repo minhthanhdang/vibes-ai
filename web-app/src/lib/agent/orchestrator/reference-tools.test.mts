@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import type { ToolReference } from "@/lib/agent/shared/reference";
-import { CROP_CALL_LIMIT, CROP_REFERENCE, cropCeilingSaid, DISCARD_REFERENCE, GENERATE_CALL_LIMIT, GENERATE_IMAGE, generateImageFor, generationCeilingSaid, LIST_REFERENCES, pickReferences, READ_LIMIT, READ_REFERENCES, SHOW_REFERENCES, SHOWN_LIMIT } from "@/lib/agent/orchestrator/reference-tools";
+import { EDIT_CALL_LIMIT, EDIT_REFERENCE, editCeilingSaid, DISCARD_REFERENCE, GENERATE_CALL_LIMIT, GENERATE_IMAGE, generateImageFor, generationCeilingSaid, LIST_REFERENCES, pickReferences, READ_LIMIT, READ_REFERENCES, SHOW_REFERENCES, SHOWN_LIMIT } from "@/lib/agent/orchestrator/reference-tools";
 import { CROP_ASPECT_IDS, LOOSE_SHAPE_IDS } from "@/lib/references/reference-version";
 
 function reference(overrides: Partial<ToolReference> = {}): ToolReference {
@@ -81,11 +81,11 @@ test("list_references offers the cuts as something to leave out, not to ask for"
   assert.equal(LIST_REFERENCES.description.includes("this is for the cuts"), false);
 });
 
-test("crop_reference takes any shape a user names, not only the usual ones", () => {
-  assert.equal(CROP_REFERENCE.name, "crop_reference");
-  assert.deepEqual(CROP_REFERENCE.parameters.required, ["referenceId", "intention"]);
+test("edit_reference takes any shape a user names, not only the usual ones", () => {
+  assert.equal(EDIT_REFERENCE.name, "edit_reference");
+  assert.deepEqual(EDIT_REFERENCE.parameters.required, ["referenceId", "intention"]);
 
-  const properties = CROP_REFERENCE.parameters.properties as Record<
+  const properties = EDIT_REFERENCE.parameters.properties as Record<
     string,
     { enum?: string[]; description?: string }
   >;
@@ -98,19 +98,19 @@ test("crop_reference takes any shape a user names, not only the usual ones", () 
     assert.match(String(properties.aspect?.description), new RegExp(id));
   }
   assert.ok(properties.boardId);
-  assert.ok(!CROP_REFERENCE.parameters.required?.includes("boardId"));
+  assert.ok(!EDIT_REFERENCE.parameters.required?.includes("boardId"));
   assert.match(String(properties.boardId?.description), /the exchange is already made/);
   assert.ok(!String(properties.boardId?.description).includes("swap_on_board"));
 });
 
-test("crop_reference says the cut is filed and how it goes, not that it is offered", () => {
-  const said = CROP_REFERENCE.description;
+test("edit_reference says the version is filed and how it goes, not that it is offered", () => {
+  const said = EDIT_REFERENCE.description;
 
   assert.match(said, /filed as a new reference of this project/);
-  assert.match(said, /frame it came out of is untouched/);
-  assert.match(said, /discard_reference is how a cut nobody wanted goes/);
+  assert.match(said, /picture it came out of is untouched/);
+  assert.match(said, /discard_reference is how a version nobody wanted goes/);
   assert.match(said, /next round of this same turn/);
-  assert.match(said, new RegExp(`at most ${CROP_CALL_LIMIT} a turn`));
+  assert.match(said, new RegExp(`at most ${EDIT_CALL_LIMIT} a turn`));
 
   for (const offered of [
     "It does not change anything",
@@ -215,11 +215,11 @@ test("generate_image's description parameter says the drawing model sees nothing
   for (const id of [...CROP_ASPECT_IDS, ...LOOSE_SHAPE_IDS]) {
     assert.match(properties.aspect!.description, new RegExp(id.replace(/\./g, "\\.")));
   }
-  assert.match(properties.aspect!.description, /crop_reference/);
+  assert.match(properties.aspect!.description, /edit_reference/);
   const alone = generateImageFor({ photographs: 0, crops: 0, boards: 0 });
   const aloneAspect = (alone.parameters.properties as Record<string, { description: string }>)
     .aspect!.description;
-  assert.ok(!aloneAspect.includes("crop_reference"));
+  assert.ok(!aloneAspect.includes("edit_reference"));
   for (const id of [...CROP_ASPECT_IDS, ...LOOSE_SHAPE_IDS]) {
     assert.match(aloneAspect, new RegExp(id.replace(/\./g, "\\.")));
   }
@@ -242,26 +242,26 @@ test("the generation ceiling is refused in terms of what was drawn, not what was
   assert.match(some, /show the user what you did draw/);
 });
 
-test("the crop ceiling is refused in terms of what was cut, not what was paid for", () => {
-  const all = cropCeilingSaid(CROP_CALL_LIMIT, CROP_CALL_LIMIT);
-  assert.match(all, new RegExp(`already filed ${CROP_CALL_LIMIT} cuts`));
-  assert.match(all, /tell the user what you cut/);
+test("the edit ceiling is refused in terms of what was made, not what was paid for", () => {
+  const all = editCeilingSaid(EDIT_CALL_LIMIT, EDIT_CALL_LIMIT);
+  assert.match(all, new RegExp(`already filed ${EDIT_CALL_LIMIT} edits`));
+  assert.match(all, /tell the user what you did/);
 
-  const none = cropCeilingSaid(CROP_CALL_LIMIT, 0);
-  assert.match(none, /none of them could be cut/);
-  assert.ok(!none.includes("tell the user what you cut"));
+  const none = editCeilingSaid(EDIT_CALL_LIMIT, 0);
+  assert.match(none, /none of them could be made/);
+  assert.ok(!none.includes("tell the user what you did"));
   assert.ok(!none.includes("already filed"));
 
-  const some = cropCeilingSaid(2, 1);
+  const some = editCeilingSaid(2, 1);
   assert.match(some, /1 of them was filed/);
-  assert.match(some, /tell the user which cuts they have/);
+  assert.match(some, /tell the user which pictures they have/);
 });
 
 test("the crop ceiling asks the user nothing", () => {
   for (const said of [
-    cropCeilingSaid(CROP_CALL_LIMIT, CROP_CALL_LIMIT),
-    cropCeilingSaid(CROP_CALL_LIMIT, 0),
-    cropCeilingSaid(2, 1),
+    editCeilingSaid(EDIT_CALL_LIMIT, EDIT_CALL_LIMIT),
+    editCeilingSaid(EDIT_CALL_LIMIT, 0),
+    editCeilingSaid(2, 1),
   ]) {
     assert.doesNotMatch(said, /ask the user/i);
     assert.doesNotMatch(said, /which of them is the one/);

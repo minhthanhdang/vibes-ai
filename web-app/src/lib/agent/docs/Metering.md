@@ -86,7 +86,7 @@ a cent — and "$0.00" is the number that makes a bill look like it isn't there.
 ## III. Reading a thrown agent
 
 Structurally rather than with `instanceof`. The error crosses a module boundary
-— the cropper throws it, the executor and the router record it — and a class
+— the image editor throws it, the executor and the router record it — and a class
 that has been loaded twice makes a nominal check quietly false at exactly the
 moment it matters. Two loaders is not hypothetical here: under the test runner
 an `.mts` file and a `.ts` file importing the same module by the same specifier
@@ -108,9 +108,17 @@ four keys is three chances to record output tokens in the prompt column.
 ## IV. The spend summary
 
 What the project spent, per agent and in total. Grouped by agent because that is
-the question worth asking of these rows: the cropper reads photographs and the
-compositor reads a sentence, so one number over both of them hides which one to
-go and cap.
+the question worth asking of these rows: the image editor reads photographs and
+the compositor reads a sentence, so one number over both of them hides which one
+to go and cap.
+
+**A run row says `CROPPER` while its transcript says `image-editor` — on purpose,
+2026-09-01.** When the cropper widened into the image editor the `AgentKind` enum
+was deliberately left alone: renaming it is a migration over every existing run
+row, and the enum is a grouping key for a bill rather than a name anybody reads.
+The transcript label (`withAgent("image-editor", …)`) moved because that one *is*
+read, by hand, when a turn is being traced. So the two disagree, and both are
+correct for what they are for. Do not "fix" it.
 
 Rows that recorded no counts — everything written before this column existed,
 and every run that failed before the call — are counted as runs and add nothing,

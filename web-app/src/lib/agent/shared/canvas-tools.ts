@@ -274,7 +274,7 @@ export const TRANSFORM_ON_CANVAS: ToolDeclaration = {
             stretch: {
               type: "BOOLEAN",
               description:
-                "Stretch a lone picture to exactly size instead of keeping its proportions — only when the user asked for the distortion, since a photo forced to a shape is usually a crop_reference ask in disguise.",
+                "Stretch a lone picture to exactly size instead of keeping its proportions — only when the user asked for the distortion, since a photo forced to a shape is usually an edit_reference ask in disguise.",
             },
           },
           required: ["objectId"],

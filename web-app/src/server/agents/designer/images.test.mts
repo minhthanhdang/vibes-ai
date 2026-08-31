@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { cropEdit } from "@/lib/references/reference-edit";
 
 import {
   CUT_STATUS,
@@ -10,8 +11,8 @@ import {
 } from "./images";
 import { galleryToolset } from "./gallery";
 import { designerReferences } from "./references";
-import { CROP_CALL_LIMIT, GENERATE_CALL_LIMIT } from "@/lib/agent/orchestrator/reference-tools";
-import { CROP_IMAGE, DESIGNER_GENERATE_IMAGE } from "@/lib/agent/designer/image-tools";
+import { EDIT_CALL_LIMIT, GENERATE_CALL_LIMIT } from "@/lib/agent/orchestrator/reference-tools";
+import { EDIT_IMAGE, DESIGNER_GENERATE_IMAGE } from "@/lib/agent/designer/image-tools";
 import type { PrismaClient } from "@/generated/prisma/client";
 import type { Cut } from "@/server/references/cut";
 
@@ -31,9 +32,8 @@ type Row = {
   width: number | null;
   height: number | null;
   editIntent: string;
-  editAspect: string;
   editRationale: string;
-  cropBox: number[];
+  edit: unknown[];
   isFavorite: boolean;
   gcsUri: string;
   thumbGcsUri: string | null;
@@ -50,9 +50,8 @@ function photo(id: string, over: Partial<Row> = {}): Row {
     width: 4000,
     height: 3000,
     editIntent: "",
-    editAspect: "",
     editRationale: "",
-    cropBox: [],
+    edit: [],
     isFavorite: false,
     gcsUri: `gs://director-bucket/uploads/${id}.jpg`,
     thumbGcsUri: null,
@@ -116,9 +115,8 @@ function fakeDb(
       width: (data.width as number) ?? null,
       height: (data.height as number) ?? null,
       editIntent: (data.editIntent as string) ?? "",
-      editAspect: (data.editAspect as string) ?? "",
       editRationale: (data.editRationale as string) ?? "",
-      cropBox: (data.cropBox as number[]) ?? [],
+      edit: (data.edit as unknown[]) ?? [],
       source: cutOf ? { id: cutOf, title: `${cutOf}.jpg` } : null,
       analysis: null,
     });
@@ -182,6 +180,8 @@ function cropping(over: Record<string, unknown> = {}) {
     return {
       model: "gemini-flash",
       box: BOX,
+      ops: cropEdit(BOX),
+      looks: 0,
       intent: "the bride at the arch",
       rationale: "the subject fills the centre third",
       attempts: 1,
@@ -240,7 +240,7 @@ function images(
     references,
     budget,
     generate: (over.generate ?? drew(png(1024, 1024))) as never,
-    crop: (over.crop ?? cropping().crop) as never,
+    edit: (over.crop ?? cropping().crop) as never,
     cutRegion: (over.cutRegion ?? cutting().cutRegion) as never,
     storeImage: async (contentType, bytes) => {
       stored.push({ contentType, bytes });
@@ -258,7 +258,7 @@ test("the toolset offers both image tools and answers null for a name it does no
   const { declarations, execute } = images();
   assert.deepEqual(
     declarations.map(({ name }) => name),
-    [DESIGNER_GENERATE_IMAGE.name, CROP_IMAGE.name],
+    [DESIGNER_GENERATE_IMAGE.name, EDIT_IMAGE.name],
   );
   assert.equal(await execute({ name: "put_on_canvas", args: {} }), null);
 });
@@ -383,8 +383,8 @@ test("a drawing that came back off the asked shape says so and names agent 8's c
   const result = outcome!.result as Record<string, string>;
   assert.equal(result.aspect, "16:9");
   assert.match(result.drawnAt, /1024×1024/);
-  assert.match(result.drawnAt, /crop_image/);
-  assert.doesNotMatch(result.drawnAt, /crop_reference/);
+  assert.match(result.drawnAt, /edit_image/);
+  assert.doesNotMatch(result.drawnAt, /edit_reference/);
 });
 
 test("a drawing at the shape that was asked for says nothing about it", async () => {
@@ -443,7 +443,7 @@ const SCENE = [pageFrame("pg1"), imageOn("el1", "a", { width: 480, height: 360 }
 test("a cut is stored and filed before the answer names an id, and the analyzer is kicked", async () => {
   const { execute, stored, filed, kicked } = images([photo("a")]);
   const outcome = await execute({
-    name: "crop_image",
+    name: "edit_image",
     args: { imageId: "a", intention: "the bride at the arch" },
   });
   const result = outcome!.result as Record<string, string>;
@@ -457,7 +457,7 @@ test("a cut is stored and filed before the answer names an id, and the analyzer 
 test("the cut resolves in the same design on the round after it was made", async () => {
   const { execute, db, references } = images([photo("a")]);
   const outcome = await execute({
-    name: "crop_image",
+    name: "edit_image",
     args: { imageId: "a", intention: "the arch" },
   });
   const madeId = (outcome!.result as { imageId: string }).imageId;
@@ -474,7 +474,7 @@ test("the cut resolves in the same design on the round after it was made", async
 test("toObjectId holds the cut to that object's own box and says which box", async () => {
   const { execute, calls } = images([photo("a")], { elements: SCENE });
   const outcome = await execute({
-    name: "crop_image",
+    name: "edit_image",
     args: { imageId: "a", intention: "the arch", toObjectId: "el1" },
   });
   const result = outcome!.result as Record<string, string>;
@@ -488,7 +488,7 @@ test("toObjectId holds the cut to that object's own box and says which box", asy
 test("a shape said in the call wins over the box it is for", async () => {
   const { execute } = images([photo("a")], { elements: SCENE });
   const outcome = await execute({
-    name: "crop_image",
+    name: "edit_image",
     args: { imageId: "a", intention: "the arch", toObjectId: "el1", aspect: "1:1" },
   });
   const result = outcome!.result as Record<string, string>;
@@ -499,13 +499,12 @@ test("a shape said in the call wins over the box it is for", async () => {
 test("a nudge that names a box is held to the box rather than to the shape it was cut at", async () => {
   const cut = photo("a-cut", {
     source: { id: "a", title: "a.jpg" },
-    cropBox: [100, 100, 900, 900],
+    edit: [{ op: "crop", box: [100, 100, 900, 900], shape: "1:1" }],
     editIntent: "the arch",
-    editAspect: "1:1",
   });
   const { execute } = images([photo("a"), cut], { elements: SCENE });
   const outcome = await execute({
-    name: "crop_image",
+    name: "edit_image",
     args: { imageId: "a-cut", intention: "a little wider", toObjectId: "el1" },
   });
   const result = outcome!.result as Record<string, string>;
@@ -519,7 +518,7 @@ test("a handle the board does not carry is refused without a vision call", async
   const cropper = cropping();
   const { execute, stored } = images([photo("a")], { elements: SCENE, crop: cropper.crop });
   const outcome = await execute({
-    name: "crop_image",
+    name: "edit_image",
     args: { imageId: "a", intention: "the arch", toObjectId: "el9" },
   });
   assert.match((outcome!.result as { error: string }).error, /no object called el9/);
@@ -535,7 +534,7 @@ test("an object with no shape a cut can be held to is refused, naming the way ro
     crop: cropper.crop,
   });
   const outcome = await execute({
-    name: "crop_image",
+    name: "edit_image",
     args: { imageId: "a", intention: "the arch", toObjectId: "el1" },
   });
   assert.match((outcome!.result as { error: string }).error, /no shape a cut can be held to/);
@@ -546,7 +545,7 @@ test("an object with no shape a cut can be held to is refused, naming the way ro
 test("a board that is not this project's is a sentence rather than a shapeless cut", async () => {
   const { execute } = images([photo("a")], { elements: null });
   const outcome = await execute({
-    name: "crop_image",
+    name: "edit_image",
     args: { imageId: "a", intention: "the arch", toObjectId: "el1" },
   });
   assert.match((outcome!.result as { error: string }).error, /no board called b1/);
@@ -555,7 +554,7 @@ test("a board that is not this project's is a sentence rather than a shapeless c
 test("the answer says the board is unchanged and names the two calls that place the cut", async () => {
   const { execute, calls } = images([photo("a")], { elements: SCENE });
   const outcome = await execute({
-    name: "crop_image",
+    name: "edit_image",
     args: { imageId: "a", intention: "the arch", toObjectId: "el1" },
   });
   assert.equal((outcome!.result as { status: string }).status, CUT_STATUS);
@@ -568,7 +567,7 @@ test("the answer says the board is unchanged and names the two calls that place 
 test("a cut is words only — no picture, no tile and no bucket path", async () => {
   const { execute } = images([photo("a")]);
   const outcome = await execute({
-    name: "crop_image",
+    name: "edit_image",
     args: { imageId: "a", intention: "the arch" },
   });
   assert.equal(outcome!.pictures, undefined);
@@ -579,11 +578,11 @@ test("a cut is words only — no picture, no tile and no bucket path", async () 
 test("a cut is answered in agent 8's verbs and never in agent 6's", async () => {
   const { execute } = images([photo("a")], { elements: SCENE });
   const outcome = await execute({
-    name: "crop_image",
+    name: "edit_image",
     args: { imageId: "a", intention: "the arch", toObjectId: "el1" },
   });
   const said = JSON.stringify(outcome!.result);
-  for (const verb of ["crop_reference", "discard_reference", "swap_on_board", "inspect_board"]) {
+  for (const verb of ["edit_reference", "discard_reference", "swap_on_board", "inspect_board"]) {
     assert.doesNotMatch(said, new RegExp(verb), verb);
   }
 });
@@ -591,7 +590,7 @@ test("a cut is answered in agent 8's verbs and never in agent 6's", async () => 
 test("a loose shape says both what it was framed for and what it came out", async () => {
   const { execute } = images([photo("a")]);
   const outcome = await execute({
-    name: "crop_image",
+    name: "edit_image",
     args: { imageId: "a", intention: "the arch", aspect: "square" },
   });
   const result = outcome!.result as Record<string, string>;
@@ -603,14 +602,14 @@ test("a shape that cannot be read is refused without spending one of the turn's 
   const cropper = cropping();
   const { execute } = images([photo("a")], { crop: cropper.crop });
   const bad = await execute({
-    name: "crop_image",
+    name: "edit_image",
     args: { imageId: "a", intention: "the arch", aspect: "wideish" },
   });
   assert.match((bad!.result as { error: string }).error, /not a shape a cut can be held to/);
   assert.equal(cropper.asked.length, 0);
 
   const good = await execute({
-    name: "crop_image",
+    name: "edit_image",
     args: { imageId: "a", intention: "the arch" },
   });
   assert.equal((good!.result as { error?: string }).error, undefined);
@@ -619,7 +618,7 @@ test("a shape that cannot be read is refused without spending one of the turn's 
 test("a picture the gallery does not hold is named in agent 8's noun", async () => {
   const { execute } = images([photo("a")]);
   const outcome = await execute({
-    name: "crop_image",
+    name: "edit_image",
     args: { imageId: "zz", intention: "the arch" },
   });
   assert.equal((outcome!.result as { error: string }).error, "no picture called zz in this project");
@@ -627,7 +626,7 @@ test("a picture the gallery does not hold is named in agent 8's noun", async () 
 
 test("an ask with nothing said about what to keep is refused in agent 8's noun", async () => {
   const { execute } = images([photo("a")]);
-  const outcome = await execute({ name: "crop_image", args: { imageId: "a", intention: "  " } });
+  const outcome = await execute({ name: "edit_image", args: { imageId: "a", intention: "  " } });
   assert.equal(
     (outcome!.result as { error: string }).error,
     "say what to crop out of this picture",
@@ -636,19 +635,19 @@ test("an ask with nothing said about what to keep is refused in agent 8's noun",
 
 test("the design's cuts run out and the refusal says how many were filed", async () => {
   const { execute, stored } = images([photo("a")]);
-  for (let n = 0; n < CROP_CALL_LIMIT; n += 1) {
-    await execute({ name: "crop_image", args: { imageId: "a", intention: `pass ${n}` } });
+  for (let n = 0; n < EDIT_CALL_LIMIT; n += 1) {
+    await execute({ name: "edit_image", args: { imageId: "a", intention: `pass ${n}` } });
   }
-  assert.equal(stored.length, CROP_CALL_LIMIT);
-  const over = await execute({ name: "crop_image", args: { imageId: "a", intention: "once more" } });
-  assert.match((over!.result as { error: string }).error, /this turn may cut/);
-  assert.equal(stored.length, CROP_CALL_LIMIT);
+  assert.equal(stored.length, EDIT_CALL_LIMIT);
+  const over = await execute({ name: "edit_image", args: { imageId: "a", intention: "once more" } });
+  assert.match((over!.result as { error: string }).error, /this turn may edit/);
+  assert.equal(stored.length, EDIT_CALL_LIMIT);
 });
 
 test("the cropper run row is filed under the designer rather than the orchestrator", async () => {
   const { execute, runs } = images([photo("a")], { elements: SCENE });
   await execute({
-    name: "crop_image",
+    name: "edit_image",
     args: { imageId: "a", intention: "the arch", toObjectId: "el1" },
   });
   const cut = runs.filter((row) => row.agent === "CROPPER");
@@ -662,11 +661,11 @@ test("the cropper run row is filed under the designer rather than the orchestrat
 test("the box is read fresh on each cut, since the model has been moving things all call", async () => {
   const { execute, calls } = images([photo("a")], { elements: SCENE });
   await execute({
-    name: "crop_image",
+    name: "edit_image",
     args: { imageId: "a", intention: "one", toObjectId: "el1" },
   });
   await execute({
-    name: "crop_image",
+    name: "edit_image",
     args: { imageId: "a", intention: "two", toObjectId: "el1" },
   });
   assert.equal(calls.filter((call) => call.table === "moodboard").length, 2);
@@ -676,7 +675,7 @@ test("the box is read fresh on each cut, since the model has been moving things 
 test("a page object is measured off its own recorded size", async () => {
   const { execute } = images([photo("a")], { elements: SCENE });
   const outcome = await execute({
-    name: "crop_image",
+    name: "edit_image",
     args: { imageId: "a", intention: "the arch", toObjectId: "pg1" },
   });
   const result = outcome!.result as Record<string, string>;
@@ -689,7 +688,7 @@ test("a design spends the turn's budget rather than one it opened", async () => 
   const { execute, stored } = images([photo("a")], { budget });
 
   await execute({ name: "generate_image", args: { description: "A dusk gradient" } });
-  await execute({ name: "crop_image", args: { imageId: "a", intention: "the hands" } });
+  await execute({ name: "edit_image", args: { imageId: "a", intention: "the hands" } });
 
   assert.deepEqual(budget, {
     generations: { asked: 1, filed: 1 },
@@ -701,7 +700,7 @@ test("a design spends the turn's budget rather than one it opened", async () => 
 test("what the turn spent before the design is what the design has left", async () => {
   const budget = ownPictureBudget();
   budget.generations = { asked: GENERATE_CALL_LIMIT, filed: GENERATE_CALL_LIMIT };
-  budget.crops = { asked: CROP_CALL_LIMIT, filed: CROP_CALL_LIMIT };
+  budget.crops = { asked: EDIT_CALL_LIMIT, filed: EDIT_CALL_LIMIT };
   const { execute, stored, runs } = images([photo("a")], { budget });
 
   const drawn = await execute({ name: "generate_image", args: { description: "A dusk gradient" } });
@@ -710,10 +709,10 @@ test("what the turn spent before the design is what the design has left", async 
     new RegExp(`already made ${GENERATE_CALL_LIMIT} pictures`),
   );
 
-  const cut = await execute({ name: "crop_image", args: { imageId: "a", intention: "the hands" } });
+  const cut = await execute({ name: "edit_image", args: { imageId: "a", intention: "the hands" } });
   assert.match(
     (cut!.result as { error: string }).error,
-    new RegExp(`already filed ${CROP_CALL_LIMIT} cuts`),
+    new RegExp(`already filed ${EDIT_CALL_LIMIT} edits`),
   );
 
   assert.equal(stored.length, 0);
@@ -728,7 +727,7 @@ test("made() names the pictures the design drew and cut, by the ids it filed", a
   const { execute, made, filed } = images([photo("a")], { elements: SCENE });
 
   await execute({ name: "generate_image", args: { description: "A dusk gradient" } });
-  await execute({ name: "crop_image", args: { imageId: "a", intention: "the hands" } });
+  await execute({ name: "edit_image", args: { imageId: "a", intention: "the hands" } });
 
   const ledger = made();
   assert.equal(ledger.generated.length, 1);
@@ -755,7 +754,7 @@ test("made() counts no cut for a picture the project has not got", async () => {
   const { execute, made } = images([photo("a")], { elements: SCENE });
 
   const refused = await execute({
-    name: "crop_image",
+    name: "edit_image",
     args: { imageId: "gone", intention: "the hands" },
   });
   assert.ok((refused!.result as { error?: string }).error);

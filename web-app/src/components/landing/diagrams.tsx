@@ -109,7 +109,7 @@ export function AgentArchitectureDiagram() {
       />
 
       <Box x={24} y={240} w={160} h={62} title="Analyzer · agent 2" subs={["reads the gallery"]} />
-      <Box x={208} y={240} w={160} h={62} title="Cropper · agent 3" subs={["cuts what matters"]} />
+      <Box x={208} y={240} w={160} h={62} title="Image editor · agent 3" subs={["cut, turn, grade"]} />
       <Box x={392} y={240} w={160} h={62} title="Imaginer" subs={["gemini-3-pro-image"]} accent="#FBBC05" />
       <Box x={576} y={240} w={160} h={62} title="Placer · agent 4" subs={["writes geometry"]} />
 

@@ -1,7 +1,7 @@
 import {
   LIST_REFERENCES,
   READ_REFERENCES,
-  cropReferenceFor,
+  editReferenceFor,
   discardReferenceFor,
   generateImageFor,
   showReferencesFor,
@@ -33,7 +33,7 @@ export function orchestratorTools(state: ProjectState) {
       ? [
           LIST_REFERENCES,
           showReferencesFor(state),
-          cropReferenceFor(state),
+          editReferenceFor(state),
           discardReferenceFor(state),
           READ_REFERENCES,
         ]

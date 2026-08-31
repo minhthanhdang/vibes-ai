@@ -97,7 +97,7 @@ const DOORS = [
   ["src/server/agents/orchestrator/turn.ts", "runOrchestratorTurn", "orchestrator"],
   ["src/server/agents/designer/design.ts", "designPage", "designer"],
   ["src/server/agents/analyzer/analyzer.ts", "analyzeReference", "analyzer"],
-  ["src/server/agents/cropper/cropper.ts", "cropReference", "cropper"],
+  ["src/server/agents/image-editor/image-editor.ts", "editReference", "image-editor"],
   ["src/server/agents/image-generator/image-generator.ts", "generateImage", "image-generator"],
 ];
 

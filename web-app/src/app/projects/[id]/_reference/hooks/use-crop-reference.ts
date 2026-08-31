@@ -4,7 +4,8 @@ import { useCallback, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTRPC, useTRPCClient } from "@/trpc/react";
 import { hashFileContent } from "@/lib/intake/content-hash";
-import { editIntent, shapeAsked } from "@/lib/references/reference-version";
+import { cropBoxOf, editIntent, shapeAsked } from "@/lib/references/reference-version";
+import { cropEdit, editBox, editShape } from "@/lib/references/reference-edit";
 import type { CropRegion } from "@/lib/canvas/moodboard-crop";
 import { cutFromOriginal } from "../utils/cut-reference";
 import { announceCutTaken } from "../../_events/cut-taken";
@@ -24,9 +25,8 @@ export type CropProposal = {
 
 export type CropOrigin = {
   id: string;
-  cropBox: number[];
+  edit: unknown;
   editIntent: string;
-  editAspect?: unknown;
 };
 
 export function useReferenceCrop({
@@ -104,6 +104,9 @@ export function useReferenceCrop({
     setError(null);
     setStage("cutting");
     try {
+      const box = cropBoxOf(proposal.cropBox);
+      if (!box) throw new Error("that is not a box of this image");
+
       const cut = await cutFromOriginal(referenceId, proposal.region);
       if (!cut) throw new Error("this browser could not cut the image");
 
@@ -115,10 +118,7 @@ export function useReferenceCrop({
         sourceReferenceId: referenceId,
         editIntent: proposal.editIntent,
         editRationale: proposal.editRationale,
-        cropBox: proposal.cropBox,
-        ...((proposal.aspect ?? proposal.loose) && {
-          editAspect: proposal.aspect ?? proposal.loose ?? undefined,
-        }),
+        edit: cropEdit(box, proposal.aspect ?? proposal.loose),
       });
 
       announceCutTaken({
@@ -161,9 +161,12 @@ export function useReferenceCrop({
 
   const adjust = useCallback(
     async (version: CropOrigin, prompt: string) => {
-      const asked = shapeAsked(version.editAspect);
+      const box = editBox(version.edit);
+      if (!box) return;
+
+      const asked = shapeAsked(editShape(version.edit));
       await ask(prompt, {
-        previous: { cropBox: version.cropBox, editIntent: version.editIntent },
+        previous: { cropBox: box, editIntent: version.editIntent },
         origin: version,
         aspect: asked?.shape?.label ?? null,
         loose: asked?.loose?.id ?? null,

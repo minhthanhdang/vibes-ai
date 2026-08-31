@@ -92,7 +92,7 @@ export function slotShapeFor(
 }
 
 export const LOOSE_IN_SLOT_NOTE =
-  "these are on the board with page showing around them — a crop_reference at the shape beside each one, passing this board's id as boardId, cuts the picture to that slot's own shape and puts the cut in its place there in the one call. Nothing else is owed for it; the exchange is made inside that call";
+  "these are on the board with page showing around them — an edit_reference at the shape beside each one, passing this board's id as boardId, cuts the picture to that slot's own shape and puts the cut in its place there in the one call. Nothing else is owed for it; the exchange is made inside that call";
 
 const SEATED_TOLERANCE = 0.01;
 

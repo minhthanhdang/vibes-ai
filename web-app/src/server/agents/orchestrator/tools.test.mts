@@ -1,11 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { cropEdit, editBox, editShape } from "@/lib/references/reference-edit";
 
 import { referenceToolset } from "./tools";
 import type { DesignPageAnswer, designPage } from "@/server/agents/designer/design";
-import { CROP_CALL_LIMIT, GENERATE_CALL_LIMIT, READ_LIMIT, SHOWN_LIMIT } from "@/lib/agent/orchestrator/reference-tools";
+import { EDIT_CALL_LIMIT, GENERATE_CALL_LIMIT, READ_LIMIT, SHOWN_LIMIT } from "@/lib/agent/orchestrator/reference-tools";
 import { REWORD_LIMIT, SWAP_LIMIT } from "@/lib/agent/orchestrator/board-tools";
-import { CropperError } from "@/server/agents/cropper/cropper";
+import { ImageEditorError } from "@/server/agents/image-editor/image-editor";
 import { LayoutReaderError } from "@/server/agents/deprecated/layout-reader";
 import { ImageGeneratorError } from "@/server/agents/image-generator/image-generator";
 import { customLayoutColumns, layoutFromBoxes } from "@/lib/layout/custom-layout";
@@ -21,7 +22,7 @@ import { THUMBNAIL_CONTENT_TYPE, thumbnailBox } from "@/lib/intake/thumbnail";
 import { referencesOwedCopies } from "@/lib/intake/reference-derived";
 import { forDisplay } from "@/server/references/display";
 import { hashFileContent } from "@/lib/intake/content-hash";
-import type { CropperResult } from "@/server/agents/cropper/cropper";
+import type { ImageEditorResult } from "@/server/agents/image-editor/image-editor";
 import type { CompositorResult } from "@/server/agents/deprecated/compositor";
 import type { Cut } from "@/server/references/cut";
 import type { CropRegion } from "@/lib/canvas/moodboard-crop";
@@ -36,8 +37,7 @@ type Row = {
   width: number | null;
   height: number | null;
   editIntent: string;
-  editAspect: string;
-  cropBox: number[];
+  edit: unknown[];
   isFavorite: boolean;
   gcsUri: string;
   thumbGcsUri: string | null;
@@ -63,8 +63,7 @@ function photo(id: string, over: Partial<Row> = {}): Row {
     width: 4000,
     height: 3000,
     editIntent: "",
-    editAspect: "",
-    cropBox: [],
+    edit: [],
     isFavorite: false,
     gcsUri: `gs://director-bucket/uploads/${id}.jpg`,
     thumbGcsUri: `gs://director-bucket/thumbs/${id}.jpg`,
@@ -78,7 +77,7 @@ function cut(id: string, frameId: string, over: Partial<Row> = {}): Row {
   return photo(id, {
     source: { id: frameId, title: frameId },
     editIntent: "the doorway",
-    cropBox: [100, 200, 700, 800],
+    edit: [{ op: "crop", box: [100, 200, 700, 800] }],
     ...over,
   });
 }
@@ -161,8 +160,7 @@ function fakeDb(
               title: rows.find((row) => row.id === frameId)?.title ?? frameId,
             },
             editIntent: String(written.editIntent ?? ""),
-            editAspect: String(written.editAspect ?? ""),
-            cropBox: (written.cropBox as number[] | undefined) ?? [],
+            edit: (written.edit as unknown[] | undefined) ?? [],
           }),
         });
       }),
@@ -254,7 +252,7 @@ const spentOf = (write: { args: unknown }) => {
   return { model, promptTokens, outputTokens, totalTokens };
 };
 
-function cropping(answer: Partial<CropperResult> | Partial<CropperResult>[] = {}) {
+function cropping(answer: Partial<ImageEditorResult> | Partial<ImageEditorResult>[] = {}) {
   const asked: unknown[] = [];
   const answers = Array.isArray(answer) ? answer : [answer];
   const crop = async (input: unknown) => {
@@ -262,12 +260,14 @@ function cropping(answer: Partial<CropperResult> | Partial<CropperResult>[] = {}
     return {
       model: "gemini-pro",
       box: BOX,
+      ops: cropEdit(BOX),
+      looks: 0,
       intent: "the middle sunflower",
       rationale: "the subject fills the centre third",
       attempts: 1,
       usage: CROP_USAGE,
       ...answers[Math.min(asked.length, answers.length) - 1],
-    } as CropperResult;
+    } as ImageEditorResult;
   };
   return { asked, crop: crop as never };
 }
@@ -562,13 +562,13 @@ test("an unknown tool is answered rather than thrown", async () => {
   assert.match(String((await run(toolset, "build_deck")).result.error), /no tool called build_deck/);
 });
 
-test("crop_reference cuts the frame, files the row and shows the cut", async () => {
+test("edit_reference cuts the frame, files the row and shows the cut", async () => {
   const { db, of } = fakeDb([photo("a")]);
   const { asked, crop } = cropping({ attempts: 2 });
   const seam = cutting();
-  const toolset = referenceToolset({ db, projectId: "p1", crop, ...seam.deps });
+  const toolset = referenceToolset({ db, projectId: "p1", edit: crop, ...seam.deps });
 
-  const { result, attachments } = await run(toolset, "crop_reference", {
+  const { result, attachments } = await run(toolset, "edit_reference", {
     referenceId: "a",
     intention: "the middle sunflower",
     aspect: "16:9",
@@ -599,8 +599,8 @@ test("crop_reference cuts the frame, files the row and shows the cut", async () 
   assert.equal(written.sourceReferenceId, "a");
   assert.equal(written.title, "a (crop)");
   assert.equal(written.editIntent, "the middle sunflower");
-  assert.equal(written.editAspect, "16:9");
-  assert.deepEqual(written.cropBox, [200, 100, 800, 900]);
+  assert.equal(editShape(written.edit), "16:9");
+  assert.deepEqual(editBox(written.edit), [200, 100, 800, 900]);
   assert.equal(written.width, 2400);
   assert.equal(written.height, 1800);
   assert.equal(of("$transaction", "run").length, 1);
@@ -636,9 +636,9 @@ test("crop_reference cuts the frame, files the row and shows the cut", async () 
 test("the answer says what the cut keeps, since nothing draws it any more", async () => {
   const { db } = fakeDb([photo("a")]);
   const { crop } = cropping();
-  const toolset = referenceToolset({ db, projectId: "p1", crop, ...cutting().deps });
+  const toolset = referenceToolset({ db, projectId: "p1", edit: crop, ...cutting().deps });
 
-  const { result } = await run(toolset, "crop_reference", {
+  const { result } = await run(toolset, "edit_reference", {
     referenceId: "a",
     intention: "the middle sunflower",
     aspect: "16:9",
@@ -655,9 +655,9 @@ test("a cut already inside the thumbnail box is filed without a second copy", as
   const { db, of } = fakeDb([photo("a")]);
   const { crop } = cropping();
   const seam = cutting({ width: 480, height: 320 });
-  const toolset = referenceToolset({ db, projectId: "p1", crop, ...seam.deps });
+  const toolset = referenceToolset({ db, projectId: "p1", edit: crop, ...seam.deps });
 
-  const { result } = await run(toolset, "crop_reference", {
+  const { result } = await run(toolset, "edit_reference", {
     referenceId: "a",
     intention: "the sign over the door",
   });
@@ -684,16 +684,16 @@ test("a filed cut is not swept for a derived copy and a drawn picture is", async
 
   const big = fakeDb([photo("a")]);
   await run(
-    referenceToolset({ db: big.db, projectId: "p1", crop: cropping().crop, ...cutting().deps }),
-    "crop_reference",
+    referenceToolset({ db: big.db, projectId: "p1", edit: cropping().crop, ...cutting().deps }),
+    "edit_reference",
     { referenceId: "a", intention: "the middle sunflower" },
   );
 
   const inside = fakeDb([photo("a")]);
   const small = cutting({ width: 480, height: 320 });
   await run(
-    referenceToolset({ db: inside.db, projectId: "p1", crop: cropping().crop, ...small.deps }),
-    "crop_reference",
+    referenceToolset({ db: inside.db, projectId: "p1", edit: cropping().crop, ...small.deps }),
+    "edit_reference",
     { referenceId: "a", intention: "the sign over the door" },
   );
 
@@ -722,9 +722,9 @@ test("the cut is filed under the digest of the cut, not of its copy", async () =
   const { db, of } = fakeDb([photo("a")]);
   const { crop } = cropping();
   const seam = cutting();
-  const toolset = referenceToolset({ db, projectId: "p1", crop, ...seam.deps });
+  const toolset = referenceToolset({ db, projectId: "p1", edit: crop, ...seam.deps });
 
-  await run(toolset, "crop_reference", { referenceId: "a", intention: "the middle sunflower" });
+  await run(toolset, "edit_reference", { referenceId: "a", intention: "the middle sunflower" });
 
   const asFile = (bytes: Uint8Array) => new Blob([new Uint8Array(bytes)]);
   const written = (of("reference", "create")[0]!.args as { data: Record<string, unknown> }).data;
@@ -736,9 +736,9 @@ test("a PNG cut is stored as a PNG and its grid copy as the JPEG it is", async (
   const { db } = fakeDb([photo("a", { gcsUri: "gs://director-bucket/uploads/a.png" })]);
   const { crop } = cropping();
   const seam = cutting({ width: 2400, height: 1800 }, "image/png");
-  const toolset = referenceToolset({ db, projectId: "p1", crop, ...seam.deps });
+  const toolset = referenceToolset({ db, projectId: "p1", edit: crop, ...seam.deps });
 
-  const { result } = await run(toolset, "crop_reference", {
+  const { result } = await run(toolset, "edit_reference", {
     referenceId: "a",
     intention: "the middle sunflower",
   });
@@ -753,16 +753,16 @@ test("a PNG cut is stored as a PNG and its grid copy as the JPEG it is", async (
 test("a crop the cropper gave up on records what giving up cost", async () => {
   const { db, of } = fakeDb([photo("a")]);
   const crop = (async () => {
-    throw Object.assign(new CropperError("no usable box"), { usage: CROP_USAGE });
+    throw Object.assign(new ImageEditorError("no usable box"), { usage: CROP_USAGE });
   }) as never;
   const toolset = referenceToolset({
     db,
     projectId: "p1",
-    crop,
+    edit: crop,
     ...cutting().deps,
   });
 
-  await run(toolset, "crop_reference", { referenceId: "a", intention: "the hands" });
+  await run(toolset, "edit_reference", { referenceId: "a", intention: "the hands" });
   const [failed] = of("agentRun", "update");
   assert.equal((failed!.args as { data: { status: string } }).data.status, "FAILED");
   assert.deepEqual(spentOf(failed!), { model: MODELS.FLASH, ...CROP_USAGE });
@@ -774,11 +774,11 @@ test("a crop of a frame this project does not hold costs nothing", async () => {
   const toolset = referenceToolset({
     db,
     projectId: "p1",
-    crop,
+    edit: crop,
     ...cutting().deps,
   });
 
-  const { result } = await run(toolset, "crop_reference", { referenceId: "b", intention: "the hands" });
+  const { result } = await run(toolset, "edit_reference", { referenceId: "b", intention: "the hands" });
   assert.match(String(result.error), /no reference called b/);
   assert.equal(asked.length, 0);
   assert.equal(of("agentRun", "create").length, 0);
@@ -790,11 +790,11 @@ test("a format asked of a frame with no recorded size is refused before the read
   const toolset = referenceToolset({
     db,
     projectId: "p1",
-    crop,
+    edit: crop,
     ...cutting().deps,
   });
 
-  const { result } = await run(toolset, "crop_reference", {
+  const { result } = await run(toolset, "edit_reference", {
     referenceId: "a",
     intention: "the hands",
     aspect: "2.39:1",
@@ -810,11 +810,11 @@ test("a crop with nothing said to crop is refused before the read", async () => 
   const toolset = referenceToolset({
     db,
     projectId: "p1",
-    crop,
+    edit: crop,
     ...cutting().deps,
   });
 
-  const { result } = await run(toolset, "crop_reference", { referenceId: "a", intention: "  " });
+  const { result } = await run(toolset, "edit_reference", { referenceId: "a", intention: "  " });
   assert.match(String(result.error), /say what to crop/);
   assert.equal(asked.length, 0);
 });
@@ -825,11 +825,11 @@ test("a shape the list does not name is cut at exactly that shape", async () => 
   const toolset = referenceToolset({
     db,
     projectId: "p1",
-    crop,
+    edit: crop,
     ...cutting().deps,
   });
 
-  const { result } = await run(toolset, "crop_reference", {
+  const { result } = await run(toolset, "edit_reference", {
     referenceId: "a",
     intention: "the doorway",
     aspect: "5:4",
@@ -837,8 +837,8 @@ test("a shape the list does not name is cut at exactly that shape", async () => 
 
   assert.equal((asked[0] as { aspect: string }).aspect, "1.25:1");
   assert.equal(result.aspect, "1.25:1");
-  const filed = (of("reference", "create")[0]!.args as { data: { editAspect: string } }).data;
-  assert.equal(filed.editAspect, "1.25:1");
+  const filed = filedCut(of("reference", "create"));
+  assert.equal(editShape(filed.edit), "1.25:1");
   const [created] = of("agentRun", "create");
   assert.equal(
     (created!.args as { data: { input: { aspect: string } } }).data.input.aspect,
@@ -852,11 +852,11 @@ test("a shape that cannot be read is refused before the read, not dropped", asyn
   const toolset = referenceToolset({
     db,
     projectId: "p1",
-    crop,
+    edit: crop,
     ...cutting().deps,
   });
 
-  const { result } = await run(toolset, "crop_reference", {
+  const { result } = await run(toolset, "edit_reference", {
     referenceId: "a",
     intention: "the doorway",
     aspect: "widescreen",
@@ -876,11 +876,11 @@ test("a crop asked for a board cuts and makes the swap in the one call", async (
   const toolset = referenceToolset({
     db,
     projectId: "p1",
-    crop,
+    edit: crop,
     ...cutting().deps,
   });
 
-  const { result, attachments } = await run(toolset, "crop_reference", {
+  const { result, attachments } = await run(toolset, "edit_reference", {
     referenceId: "a",
     intention: "the ridge",
     aspect: "1:1",
@@ -911,9 +911,9 @@ test("a crop that names a board says nothing about the boards it left alone", as
   ];
   const { db, of } = fakeDb([photo("a"), photo("b")], rows);
   const { crop } = cropping();
-  const toolset = referenceToolset({ db, projectId: "p1", crop, ...cutting().deps });
+  const toolset = referenceToolset({ db, projectId: "p1", edit: crop, ...cutting().deps });
 
-  const { result } = await run(toolset, "crop_reference", {
+  const { result } = await run(toolset, "edit_reference", {
     referenceId: "a",
     intention: "the ridge",
     boardId: "bd1",
@@ -931,11 +931,11 @@ test("a crop asked for a board the frame is not on is filed without the swap, an
   const toolset = referenceToolset({
     db,
     projectId: "p1",
-    crop,
+    edit: crop,
     ...cutting().deps,
   });
 
-  const { result, attachments } = await run(toolset, "crop_reference", {
+  const { result, attachments } = await run(toolset, "edit_reference", {
     referenceId: "a",
     intention: "the ridge",
     boardId: "bd1",
@@ -967,7 +967,7 @@ test("a crop whose board refuses the swap is filed all the same, and the answer 
   const toolset = referenceToolset({
     db,
     projectId: "p1",
-    crop,
+    edit: crop,
     ...cutting().deps,
   });
 
@@ -980,7 +980,7 @@ test("a crop whose board refuses the swap is filed all the same, and the answer 
     return row;
   };
 
-  const { result, attachments } = await run(toolset, "crop_reference", {
+  const { result, attachments } = await run(toolset, "edit_reference", {
     referenceId: "a",
     intention: "the ridge",
     boardId: "bd1",
@@ -1018,11 +1018,11 @@ test("a crop for a board of another project is refused before the read", async (
   const toolset = referenceToolset({
     db,
     projectId: "p1",
-    crop,
+    edit: crop,
     ...cutting().deps,
   });
 
-  const { result } = await run(toolset, "crop_reference", {
+  const { result } = await run(toolset, "edit_reference", {
     referenceId: "a",
     intention: "the ridge",
     boardId: "elsewhere",
@@ -1035,8 +1035,8 @@ test("a crop for a board of another project is refused before the read", async (
   assert.deepEqual((read!.args as { where: unknown }).where, { id: "elsewhere", projectId: "p1" });
 });
 
-const CROPPABLE = Array.from({ length: CROP_CALL_LIMIT }, (_, at) => `frame-${at + 1}`);
-const PAST_THE_CEILING = `frame-${CROP_CALL_LIMIT + 1}`;
+const CROPPABLE = Array.from({ length: EDIT_CALL_LIMIT }, (_, at) => `frame-${at + 1}`);
+const PAST_THE_CEILING = `frame-${EDIT_CALL_LIMIT + 1}`;
 const EVERY_FRAME = [...CROPPABLE, PAST_THE_CEILING];
 const WHOLE_FRAME = { box: { ymin: 0, xmin: 0, ymax: 1000, xmax: 1000 } };
 
@@ -1046,20 +1046,20 @@ test("the turn's crop budget is spent once, not once per round", async () => {
   const toolset = referenceToolset({
     db,
     projectId: "p1",
-    crop,
+    edit: crop,
     ...cutting().deps,
   });
 
   for (const id of CROPPABLE) {
-    const { result } = await run(toolset, "crop_reference", { referenceId: id, intention: "the subject" });
+    const { result } = await run(toolset, "edit_reference", { referenceId: id, intention: "the subject" });
     assert.equal(result.error, undefined);
   }
-  const { result } = await run(toolset, "crop_reference", {
+  const { result } = await run(toolset, "edit_reference", {
     referenceId: PAST_THE_CEILING,
     intention: "the subject",
   });
   assert.match(String(result.error), /already filed/);
-  assert.equal(asked.length, CROP_CALL_LIMIT);
+  assert.equal(asked.length, EDIT_CALL_LIMIT);
 });
 
 test("a turn whose reads were all refused is refused in terms of the cuts it has", async () => {
@@ -1068,21 +1068,21 @@ test("a turn whose reads were all refused is refused in terms of the cuts it has
   const toolset = referenceToolset({
     db,
     projectId: "p1",
-    crop,
+    edit: crop,
     ...cutting().deps,
   });
 
   for (const id of CROPPABLE) {
-    const { result } = await run(toolset, "crop_reference", { referenceId: id, intention: "the subject" });
+    const { result } = await run(toolset, "edit_reference", { referenceId: id, intention: "the subject" });
     assert.ok(result.error);
   }
-  const { result } = await run(toolset, "crop_reference", {
+  const { result } = await run(toolset, "edit_reference", {
     referenceId: PAST_THE_CEILING,
     intention: "the subject",
   });
-  assert.match(String(result.error), /none of them could be cut/);
-  assert.ok(!String(result.error).includes("tell the user what you cut"));
-  assert.equal(asked.length, CROP_CALL_LIMIT);
+  assert.match(String(result.error), /none of them could be made/);
+  assert.ok(!String(result.error).includes("tell the user what you did"));
+  assert.equal(asked.length, EDIT_CALL_LIMIT);
 });
 
 test("a turn that got one cut of the frames it paid for is told which number it holds", async () => {
@@ -1091,50 +1091,50 @@ test("a turn that got one cut of the frames it paid for is told which number it 
   const toolset = referenceToolset({
     db,
     projectId: "p1",
-    crop,
+    edit: crop,
     ...cutting().deps,
   });
 
   const [first, ...rest] = CROPPABLE;
-  const filed = await run(toolset, "crop_reference", { referenceId: first!, intention: "the subject" });
+  const filed = await run(toolset, "edit_reference", { referenceId: first!, intention: "the subject" });
   assert.equal(filed.result.error, undefined);
   for (const id of rest) {
-    const { result } = await run(toolset, "crop_reference", { referenceId: id, intention: "the subject" });
+    const { result } = await run(toolset, "edit_reference", { referenceId: id, intention: "the subject" });
     assert.ok(result.error);
   }
 
-  const { result } = await run(toolset, "crop_reference", {
+  const { result } = await run(toolset, "edit_reference", {
     referenceId: PAST_THE_CEILING,
     intention: "the subject",
   });
   assert.match(String(result.error), /1 of them was filed/);
-  assert.match(String(result.error), /tell the user which cuts they have/);
+  assert.match(String(result.error), /tell the user which pictures they have/);
 });
 
 test("the crop ceiling stops the model rather than asking the user", async () => {
   const { db } = fakeDb(EVERY_FRAME.map((id) => photo(id)));
   const { crop } = cropping();
-  const toolset = referenceToolset({ db, projectId: "p1", crop, ...cutting().deps });
+  const toolset = referenceToolset({ db, projectId: "p1", edit: crop, ...cutting().deps });
 
   for (const id of CROPPABLE) {
-    await run(toolset, "crop_reference", { referenceId: id, intention: "the subject" });
+    await run(toolset, "edit_reference", { referenceId: id, intention: "the subject" });
   }
-  const { result } = await run(toolset, "crop_reference", {
+  const { result } = await run(toolset, "edit_reference", {
     referenceId: PAST_THE_CEILING,
     intention: "the subject",
   });
   assert.doesNotMatch(String(result.error), /ask the user/i);
-  assert.match(String(result.error), /stop cropping/);
+  assert.match(String(result.error), /stop editing/);
 });
 
 test("the turn's ceiling bounds the rows it files, not only the frames it reads", async () => {
   const { db, of } = fakeDb(EVERY_FRAME.map((id) => photo(id)));
   const { crop } = cropping();
   const seam = cutting();
-  const toolset = referenceToolset({ db, projectId: "p1", crop, ...seam.deps });
+  const toolset = referenceToolset({ db, projectId: "p1", edit: crop, ...seam.deps });
 
   for (const id of CROPPABLE) {
-    const { result } = await run(toolset, "crop_reference", {
+    const { result } = await run(toolset, "edit_reference", {
       referenceId: id,
       intention: "the subject",
     });
@@ -1142,20 +1142,20 @@ test("the turn's ceiling bounds the rows it files, not only the frames it reads"
   }
   const stored = seam.stored.length;
 
-  const { result } = await run(toolset, "crop_reference", {
+  const { result } = await run(toolset, "edit_reference", {
     referenceId: PAST_THE_CEILING,
     intention: "the subject",
   });
   assert.match(String(result.error), /already filed/);
 
-  assert.equal(seam.cuts.length, CROP_CALL_LIMIT);
+  assert.equal(seam.cuts.length, EDIT_CALL_LIMIT);
   assert.equal(seam.stored.length, stored);
-  assert.equal(seam.kicks.length, CROP_CALL_LIMIT);
-  assert.equal(of("reference", "create").length, CROP_CALL_LIMIT);
-  assert.equal(of("agentRun", "create").length, 2 * CROP_CALL_LIMIT);
+  assert.equal(seam.kicks.length, EDIT_CALL_LIMIT);
+  assert.equal(of("reference", "create").length, EDIT_CALL_LIMIT);
+  assert.equal(of("agentRun", "create").length, 2 * EDIT_CALL_LIMIT);
   assert.deepEqual(await toolset.state(), {
     photographs: EVERY_FRAME.length,
-    crops: CROP_CALL_LIMIT,
+    crops: EDIT_CALL_LIMIT,
     boards: 0,
     generated: 0,
   });
@@ -1167,11 +1167,11 @@ test("a cut made this turn is on the canvas in the same turn", async () => {
   const toolset = referenceToolset({
     db,
     projectId: "p1",
-    crop,
+    edit: crop,
     ...cutting().deps,
   });
 
-  const made = await run(toolset, "crop_reference", {
+  const made = await run(toolset, "edit_reference", {
     referenceId: "a",
     intention: "the hands",
   });
@@ -1190,9 +1190,9 @@ test("a cut made this turn is on the canvas in the same turn", async () => {
 test("a cut filed this turn is a cut for the rest of it, not a photograph", async () => {
   const { db, of } = fakeDb([photo("a")]);
   const { asked, crop } = cropping();
-  const toolset = referenceToolset({ db, projectId: "p1", crop, ...cutting().deps });
+  const toolset = referenceToolset({ db, projectId: "p1", edit: crop, ...cutting().deps });
 
-  const made = await run(toolset, "crop_reference", {
+  const made = await run(toolset, "edit_reference", {
     referenceId: "a",
     intention: "the middle sunflower",
   });
@@ -1213,7 +1213,7 @@ test("a cut filed this turn is a cut for the rest of it, not a photograph", asyn
   };
   assert.deepEqual(withCrops.references.map((reference) => reference.id), [cutId, "a"]);
 
-  await run(toolset, "crop_reference", { referenceId: cutId, intention: "a little wider" });
+  await run(toolset, "edit_reference", { referenceId: cutId, intention: "a little wider" });
   const nudge = asked[1] as { gcsUri: string; previous?: unknown };
   assert.equal(nudge.gcsUri, "gs://director-bucket/uploads/a.jpg");
   assert.deepEqual(nudge.previous, {
@@ -1230,13 +1230,13 @@ test("two crops in one round are both in the turn the round after them", async (
   const toolset = referenceToolset({
     db,
     projectId: "p1",
-    crop,
+    edit: crop,
     ...cutting().deps,
   });
 
   const [first, second] = await Promise.all([
-    run(toolset, "crop_reference", { referenceId: "a", intention: "the hands" }),
-    run(toolset, "crop_reference", { referenceId: "b", intention: "the sign" }),
+    run(toolset, "edit_reference", { referenceId: "a", intention: "the hands" }),
+    run(toolset, "edit_reference", { referenceId: "b", intention: "the sign" }),
   ]);
   const cuts = [String(first.result.referenceId), String(second.result.referenceId)];
 
@@ -1275,17 +1275,17 @@ test("two crops for one board in a round both land, in turn", async () => {
   const toolset = referenceToolset({
     db,
     projectId: "p1",
-    crop,
+    edit: crop,
     ...cutting().deps,
   });
 
   const [first, second] = await Promise.all([
-    run(toolset, "crop_reference", {
+    run(toolset, "edit_reference", {
       referenceId: "a",
       intention: "the hands",
       boardId: "board-7",
     }),
-    run(toolset, "crop_reference", {
+    run(toolset, "edit_reference", {
       referenceId: "b",
       intention: "the sign",
       boardId: "board-7",
@@ -1324,6 +1324,8 @@ test("two crops for no board read their frames at the same time", async () => {
     return {
       model: "gemini-pro",
       box: BOX,
+      ops: cropEdit(BOX),
+      looks: 0,
       intent: "the middle sunflower",
       rationale: "the subject fills the centre third",
       attempts: 1,
@@ -1331,10 +1333,10 @@ test("two crops for no board read their frames at the same time", async () => {
     };
   }) as never;
 
-  const toolset = referenceToolset({ db, projectId: "p1", crop, ...cutting().deps });
+  const toolset = referenceToolset({ db, projectId: "p1", edit: crop, ...cutting().deps });
   const answers = await Promise.all([
-    run(toolset, "crop_reference", { referenceId: "a", intention: "the hands" }),
-    run(toolset, "crop_reference", { referenceId: "b", intention: "the sign" }),
+    run(toolset, "edit_reference", { referenceId: "a", intention: "the hands" }),
+    run(toolset, "edit_reference", { referenceId: "b", intention: "the sign" }),
   ]);
   clearTimeout(giveUp);
 
@@ -1352,14 +1354,14 @@ test("a frame that could not be cut is refused with a sentence", async () => {
   const toolset = referenceToolset({
     db,
     projectId: "p1",
-    crop,
+    edit: crop,
     ...seam.deps,
     cutRegion: async () => {
       throw new Error("Input buffer contains unsupported image format");
     },
   });
 
-  const { result, attachments } = await run(toolset, "crop_reference", {
+  const { result, attachments } = await run(toolset, "edit_reference", {
     referenceId: "a",
     intention: "the hands",
   });
@@ -1381,14 +1383,14 @@ test("a frame too large to read back says so and says not to ask again", async (
   const toolset = referenceToolset({
     db,
     projectId: "p1",
-    crop,
+    edit: crop,
     ...seam.deps,
     cutRegion: async () => {
       throw new ObjectTooLargeError("gs://test-bucket/a.jpg is 340 MB, past the 100 MB ...");
     },
   });
 
-  const { result, attachments } = await run(toolset, "crop_reference", {
+  const { result, attachments } = await run(toolset, "edit_reference", {
     referenceId: "a",
     intention: "the hands",
   });
@@ -1410,7 +1412,7 @@ test("a cut the bucket would not take is not filed", async () => {
   const toolset = referenceToolset({
     db,
     projectId: "p1",
-    crop,
+    edit: crop,
     ...seam.deps,
     storeImage: async (contentType: string, bytes: Uint8Array) =>
       seam.stored.length
@@ -1418,7 +1420,7 @@ test("a cut the bucket would not take is not filed", async () => {
         : seam.deps.storeImage(contentType, bytes),
   });
 
-  const { result, attachments } = await run(toolset, "crop_reference", {
+  const { result, attachments } = await run(toolset, "edit_reference", {
     referenceId: "a",
     intention: "the hands",
   });
@@ -1445,11 +1447,11 @@ test("a cut that is stored but cannot be filed answers with a sentence", async (
       },
     } as never,
     projectId: "p1",
-    crop,
+    edit: crop,
     ...seam.deps,
   });
 
-  const { result, attachments } = await run(toolset, "crop_reference", {
+  const { result, attachments } = await run(toolset, "edit_reference", {
     referenceId: "a",
     intention: "the hands",
   });
@@ -1477,11 +1479,11 @@ test("a box that is the whole frame ends the run as a failure with the reason on
   const toolset = referenceToolset({
     db,
     projectId: "p1",
-    crop,
+    edit: crop,
     ...cutting().deps,
   });
 
-  const { result, attachments } = await run(toolset, "crop_reference", {
+  const { result, attachments } = await run(toolset, "edit_reference", {
     referenceId: "a",
     intention: "all of it",
   });
@@ -1509,11 +1511,11 @@ test("a cropper that throws is recorded as a failed run rather than a 500", asyn
   const toolset = referenceToolset({
     db,
     projectId: "p1",
-    crop,
+    edit: crop,
     ...cutting().deps,
   });
 
-  const { result } = await run(toolset, "crop_reference", { referenceId: "a", intention: "the hands" });
+  const { result } = await run(toolset, "edit_reference", { referenceId: "a", intention: "the hands" });
   assert.equal(result.error, "cropper returned no content");
   const data = (of("agentRun", "update")[0]!.args as { data: { status: string; error: string } }).data;
   assert.equal(data.status, "FAILED");
@@ -4939,7 +4941,7 @@ test("pictures sitting loosely in their slots come back with the cut that would 
       ["a", "img-1", "16:9"],
     ],
   );
-  assert.match(String(result.looseInSlotNote), /crop_reference/);
+  assert.match(String(result.looseInSlotNote), /edit_reference/);
   assert.doesNotMatch(String(result.looseInSlotNote), /Ask the user first/);
 });
 
@@ -5470,7 +5472,7 @@ test("inspect_board says which pictures sit loosely in their slot, without compo
     ),
     [["a", "img-1", "1:1"]],
   );
-  assert.match(String(result.looseInSlotNote), /crop_reference/);
+  assert.match(String(result.looseInSlotNote), /edit_reference/);
   assert.equal(of("agentRun", "create").length, 0);
   assert.equal(of("moodboard", "updateMany").length, 0);
 });
@@ -6395,7 +6397,7 @@ test("the toolset declares what this project can use, off the reads it already m
     [
       "list_references",
       "show_references",
-      "crop_reference",
+      "edit_reference",
       "discard_reference",
       "read_references",
       "add_board",
@@ -6451,7 +6453,7 @@ test("a project with boards is handed the tools that read and edit them", async 
     [
       "list_references",
       "show_references",
-      "crop_reference",
+      "edit_reference",
       "discard_reference",
       "read_references",
       "list_boards",
@@ -6721,11 +6723,11 @@ test("a cut for a board is held to the slot's own shape, not to the nearest name
   const toolset = referenceToolset({
     db,
     projectId: "p1",
-    crop,
+    edit: crop,
     ...cutting().deps,
   });
 
-  const { result } = await run(toolset, "crop_reference", {
+  const { result } = await run(toolset, "edit_reference", {
     referenceId: "a",
     intention: "the ridge",
     aspect: "2.39:1",
@@ -6733,7 +6735,7 @@ test("a cut for a board is held to the slot's own shape, not to the nearest name
   });
 
   assert.equal((asked[0] as { aspect: string }).aspect, "3.52:1");
-  assert.equal(filedCut(of("reference", "create")).editAspect, "3.52:1");
+  assert.equal(editShape(filedCut(of("reference", "create")).edit), "3.52:1");
   assert.equal(result.aspect, "3.52:1");
   assert.match(String(result.heldToSlot), /held to 3\.52:1/);
   assert.match(String(result.heldToSlot), /img-2 slot/);
@@ -6755,18 +6757,18 @@ test("a cut for a board with no shape asked for is still held to the slot", asyn
   const toolset = referenceToolset({
     db,
     projectId: "p1",
-    crop,
+    edit: crop,
     ...cutting().deps,
   });
 
-  await run(toolset, "crop_reference", {
+  await run(toolset, "edit_reference", {
     referenceId: "a",
     intention: "the ridge",
     boardId: "bd1",
   });
 
   assert.equal((asked[0] as { aspect?: string }).aspect, "3.52:1");
-  assert.equal(filedCut(of("reference", "create")).editAspect, "3.52:1");
+  assert.equal(editShape(filedCut(of("reference", "create")).edit), "3.52:1");
 });
 
 test("a cut for a picture on the board's second page is held to that page's slot", async () => {
@@ -6784,11 +6786,11 @@ test("a cut for a picture on the board's second page is held to that page's slot
   const toolset = referenceToolset({
     db,
     projectId: "p1",
-    crop,
+    edit: crop,
     ...cutting().deps,
   });
 
-  const { result } = await run(toolset, "crop_reference", {
+  const { result } = await run(toolset, "edit_reference", {
     referenceId: "a",
     intention: "the ridge",
     aspect: "2.39:1",
@@ -6814,11 +6816,11 @@ test("a cut named a page is held to that page's opening and swaps on that page",
   const toolset = referenceToolset({
     db,
     projectId: "p1",
-    crop,
+    edit: crop,
     ...cutting().deps,
   });
 
-  const { result } = await run(toolset, "crop_reference", {
+  const { result } = await run(toolset, "edit_reference", {
     referenceId: "a",
     intention: "the ridge",
     boardId: "bd1",
@@ -6843,11 +6845,11 @@ test("a cut for the same picture with no page named falls back to reading order"
   const toolset = referenceToolset({
     db,
     projectId: "p1",
-    crop,
+    edit: crop,
     ...cutting().deps,
   });
 
-  const { result } = await run(toolset, "crop_reference", {
+  const { result } = await run(toolset, "edit_reference", {
     referenceId: "a",
     intention: "the ridge",
     boardId: "bd1",
@@ -6867,11 +6869,11 @@ test("a cut named a page the board has not got is refused with its pages", async
   const toolset = referenceToolset({
     db,
     projectId: "p1",
-    crop,
+    edit: crop,
     ...cutting().deps,
   });
 
-  const { result } = await run(toolset, "crop_reference", {
+  const { result } = await run(toolset, "edit_reference", {
     referenceId: "a",
     intention: "the ridge",
     boardId: "bd1",
@@ -6900,11 +6902,11 @@ test("a cut named a page the picture is not on is filed without the board", asyn
   const toolset = referenceToolset({
     db,
     projectId: "p1",
-    crop,
+    edit: crop,
     ...cutting().deps,
   });
 
-  const { result, attachments } = await run(toolset, "crop_reference", {
+  const { result, attachments } = await run(toolset, "edit_reference", {
     referenceId: "a",
     intention: "the ridge",
     boardId: "bd1",
@@ -6937,11 +6939,11 @@ test("a shape the user asked for that is not the slot's is left alone", async ()
   const toolset = referenceToolset({
     db,
     projectId: "p1",
-    crop,
+    edit: crop,
     ...cutting().deps,
   });
 
-  const { result } = await run(toolset, "crop_reference", {
+  const { result } = await run(toolset, "edit_reference", {
     referenceId: "a",
     intention: "the ridge",
     aspect: "1:1",
@@ -6949,7 +6951,7 @@ test("a shape the user asked for that is not the slot's is left alone", async ()
   });
 
   assert.equal((asked[0] as { aspect: string }).aspect, "1:1");
-  assert.equal(filedCut(of("reference", "create")).editAspect, "1:1");
+  assert.equal(editShape(filedCut(of("reference", "create")).edit), "1:1");
   assert.equal(result.heldToSlot, undefined);
 });
 
@@ -6963,11 +6965,11 @@ test("a ratio the user named themselves is not replaced by the slot's", async ()
   const toolset = referenceToolset({
     db,
     projectId: "p1",
-    crop,
+    edit: crop,
     ...cutting().deps,
   });
 
-  const { result } = await run(toolset, "crop_reference", {
+  const { result } = await run(toolset, "edit_reference", {
     referenceId: "a",
     intention: "the ridge",
     aspect: "5:4",
@@ -6984,11 +6986,11 @@ test("a picture on a hand-arranged board is cut at the shape that was asked for"
   const toolset = referenceToolset({
     db,
     projectId: "p1",
-    crop,
+    edit: crop,
     ...cutting().deps,
   });
 
-  const { result } = await run(toolset, "crop_reference", {
+  const { result } = await run(toolset, "edit_reference", {
     referenceId: "a",
     intention: "the ridge",
     aspect: "16:9",
@@ -7009,18 +7011,18 @@ test("a frame with no recorded size is not held to its slot", async () => {
   const toolset = referenceToolset({
     db,
     projectId: "p1",
-    crop,
+    edit: crop,
     ...cutting().deps,
   });
 
-  const { result } = await run(toolset, "crop_reference", {
+  const { result } = await run(toolset, "edit_reference", {
     referenceId: "a",
     intention: "the ridge",
     boardId: "bd1",
   });
 
   assert.equal((asked[0] as { aspect?: string }).aspect, undefined);
-  assert.equal(filedCut(of("reference", "create")).editAspect, "");
+  assert.equal(editShape(filedCut(of("reference", "create")).edit), "");
   assert.equal(result.heldToSlot, undefined);
 });
 
@@ -7120,11 +7122,11 @@ test("a loose shape is framed by the cropper rather than cut to a ratio", async 
   const toolset = referenceToolset({
     db,
     projectId: "p1",
-    crop,
+    edit: crop,
     ...cutting().deps,
   });
 
-  const { result } = await run(toolset, "crop_reference", {
+  const { result } = await run(toolset, "edit_reference", {
     referenceId: "a",
     intention: "the doorway",
     aspect: "square",
@@ -7136,8 +7138,8 @@ test("a loose shape is framed by the cropper rather than cut to a ratio", async 
   assert.equal(sent.frame?.width, 4000);
 
   const filed = filedCut(of("reference", "create"));
-  assert.deepEqual(filed.cropBox, [100, 200, 900, 800]);
-  assert.equal(filed.editAspect, "square");
+  assert.deepEqual(editBox(filed.edit), [100, 200, 900, 800]);
+  assert.equal(editShape(filed.edit), "square");
 
   assert.equal(result.aspect, undefined);
   assert.match(String(result.framedAs), /roughly square/);
@@ -7160,11 +7162,11 @@ test("a loose ask for a board is held to the slot when the slot is that shape", 
   const toolset = referenceToolset({
     db,
     projectId: "p1",
-    crop,
+    edit: crop,
     ...cutting().deps,
   });
 
-  const { result } = await run(toolset, "crop_reference", {
+  const { result } = await run(toolset, "edit_reference", {
     referenceId: "a",
     intention: "the ridge",
     aspect: "landscape",
@@ -7189,11 +7191,11 @@ test("a loose ask the slot does not satisfy stays loose", async () => {
   const toolset = referenceToolset({
     db,
     projectId: "p1",
-    crop,
+    edit: crop,
     ...cutting().deps,
   });
 
-  const { result } = await run(toolset, "crop_reference", {
+  const { result } = await run(toolset, "edit_reference", {
     referenceId: "a",
     intention: "the ridge",
     aspect: "square",
@@ -7382,17 +7384,17 @@ test("the reader is declared for any project with a picture in it", async () => 
 });
 
 test("a cut named for cropping is a nudge of it, asked of the frame it came out of", async () => {
-  const { db, of } = fakeDb([photo("a"), cut("cut-1", "a", { editAspect: "16:9" })]);
+  const { db, of } = fakeDb([photo("a"), cut("cut-1", "a", { edit: [{ op: "crop", box: [100, 200, 700, 800], shape: "16:9" }] })]);
   const { asked, crop } = cropping();
   const seam = cutting();
   const toolset = referenceToolset({
     db,
     projectId: "p1",
-    crop,
+    edit: crop,
     ...seam.deps,
   });
 
-  const { result, attachments } = await run(toolset, "crop_reference", {
+  const { result, attachments } = await run(toolset, "edit_reference", {
     referenceId: "cut-1",
     intention: "a little wider",
   });
@@ -7425,16 +7427,16 @@ test("a cut named for cropping is a nudge of it, asked of the frame it came out 
 });
 
 test("a shape the user names wins over the shape the cut was filed at", async () => {
-  const { db } = fakeDb([photo("a"), cut("cut-1", "a", { editAspect: "16:9" })]);
+  const { db } = fakeDb([photo("a"), cut("cut-1", "a", { edit: [{ op: "crop", box: [100, 200, 700, 800], shape: "16:9" }] })]);
   const { asked, crop } = cropping();
   const toolset = referenceToolset({
     db,
     projectId: "p1",
-    crop,
+    edit: crop,
     ...cutting().deps,
   });
 
-  await run(toolset, "crop_reference", {
+  await run(toolset, "edit_reference", {
     referenceId: "cut-1",
     intention: "make it square",
     aspect: "square",
@@ -7447,16 +7449,16 @@ test("a shape the user names wins over the shape the cut was filed at", async ()
 test("a nudge of a cut that is on a board takes that cut's place, at that slot's shape", async () => {
   const hero = layoutById("HERO_LEFT")!;
   const standing = composedBoard("bd1", hero, [["cut-1", "img-2", 1000, 1500]]);
-  const { db } = fakeDb([photo("a"), cut("cut-1", "a", { editAspect: "2.39:1" })], [standing]);
+  const { db } = fakeDb([photo("a"), cut("cut-1", "a", { edit: [{ op: "crop", box: [100, 200, 700, 800], shape: "2.39:1" }] })], [standing]);
   const { asked, crop } = cropping();
   const toolset = referenceToolset({
     db,
     projectId: "p1",
-    crop,
+    edit: crop,
     ...cutting().deps,
   });
 
-  const { result } = await run(toolset, "crop_reference", {
+  const { result } = await run(toolset, "edit_reference", {
     referenceId: "cut-1",
     intention: "a little more sky",
     boardId: "bd1",
@@ -7480,11 +7482,11 @@ test("a cut of a frame the board is standing on takes the frame's place", async 
   const toolset = referenceToolset({
     db,
     projectId: "p1",
-    crop,
+    edit: crop,
     ...cutting().deps,
   });
 
-  const { result } = await run(toolset, "crop_reference", {
+  const { result } = await run(toolset, "edit_reference", {
     referenceId: "a",
     intention: "the ridge",
     boardId: "bd1",
@@ -7500,16 +7502,16 @@ test("a cut of a frame the board is standing on takes the frame's place", async 
 });
 
 test("a cut with no recorded box is refused before the read, naming the frame", async () => {
-  const { db, of } = fakeDb([photo("a"), cut("cut-1", "a", { cropBox: [] })]);
+  const { db, of } = fakeDb([photo("a"), cut("cut-1", "a", { edit: [] })]);
   const { asked, crop } = cropping();
   const toolset = referenceToolset({
     db,
     projectId: "p1",
-    crop,
+    edit: crop,
     ...cutting().deps,
   });
 
-  const { result } = await run(toolset, "crop_reference", {
+  const { result } = await run(toolset, "edit_reference", {
     referenceId: "cut-1",
     intention: "a little wider",
   });
@@ -7528,11 +7530,11 @@ test("a nudge of a cut on a board names the board when none was passed", async (
   const toolset = referenceToolset({
     db,
     projectId: "p1",
-    crop,
+    edit: crop,
     ...cutting().deps,
   });
 
-  const { result } = await run(toolset, "crop_reference", {
+  const { result } = await run(toolset, "edit_reference", {
     referenceId: "cut-1",
     intention: "tighter on the head",
   });
@@ -7551,11 +7553,11 @@ test("a crop that was given a board says nothing about standing on one", async (
   const toolset = referenceToolset({
     db,
     projectId: "p1",
-    crop,
+    edit: crop,
     ...cutting().deps,
   });
 
-  const { result } = await run(toolset, "crop_reference", {
+  const { result } = await run(toolset, "edit_reference", {
     referenceId: "a",
     intention: "the ridge",
     boardId: "bd1",
@@ -7570,10 +7572,10 @@ test("a crop of a picture on no board reads no scenes and says nothing", async (
   const toolset = referenceToolset({
     db: empty.db,
     projectId: "p1",
-    crop: cropping().crop,
+    edit: cropping().crop,
     ...cutting().deps,
   });
-  const { result } = await run(toolset, "crop_reference", {
+  const { result } = await run(toolset, "edit_reference", {
     referenceId: "a",
     intention: "the ridge",
   });
@@ -7589,10 +7591,10 @@ test("a crop of a picture on no board reads no scenes and says nothing", async (
   const other = referenceToolset({
     db: elsewhere.db,
     projectId: "p1",
-    crop: cropping().crop,
+    edit: cropping().crop,
     ...cutting().deps,
   });
-  const { result: none } = await run(other, "crop_reference", {
+  const { result: none } = await run(other, "edit_reference", {
     referenceId: "a",
     intention: "the ridge",
   });
@@ -7604,11 +7606,11 @@ test("a crop that refuses before there is a cut reads no scenes", async () => {
   const toolset = referenceToolset({
     db,
     projectId: "p1",
-    crop: cropping().crop,
+    edit: cropping().crop,
     ...cutting().deps,
   });
 
-  const { result } = await run(toolset, "crop_reference", {
+  const { result } = await run(toolset, "edit_reference", {
     referenceId: "a",
     intention: "the ridge",
     aspect: "16:9",
@@ -9557,18 +9559,18 @@ test("a cut the design made is a cut the turn has spent", async () => {
   const { db, of } = fakeDb([photo("a")], [board("board-7", ["a"])]);
   const { crop } = cropping();
   const design = (async ({ budget }: { budget: { crops: { asked: number; filed: number } } }) => {
-    budget.crops.asked = CROP_CALL_LIMIT;
-    budget.crops.filed = CROP_CALL_LIMIT;
-    return designed("board-7", { calls: ["crop_image"] });
+    budget.crops.asked = EDIT_CALL_LIMIT;
+    budget.crops.filed = EDIT_CALL_LIMIT;
+    return designed("board-7", { calls: ["edit_image"] });
   }) as unknown as typeof designPage;
-  const toolset = referenceToolset({ db, projectId: "p1", crop, design, ...cutting().deps });
+  const toolset = referenceToolset({ db, projectId: "p1", edit: crop, design, ...cutting().deps });
 
   await run(toolset, "design_page", { boardId: "board-7", intention: "a welcome sign" });
 
-  const { result } = await run(toolset, "crop_reference", {
+  const { result } = await run(toolset, "edit_reference", {
     referenceId: "a",
     intention: "the hands",
   });
-  assert.match(String(result.error), new RegExp(`already filed ${CROP_CALL_LIMIT} cuts`));
+  assert.match(String(result.error), new RegExp(`already filed ${EDIT_CALL_LIMIT} edits`));
   assert.equal(of("agentRun", "create").length, 0);
 });

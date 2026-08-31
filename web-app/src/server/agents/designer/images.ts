@@ -4,15 +4,18 @@ import type { ToolDeclaration } from "@/lib/agent/shared/tool-declaration";
 import { canvasObjects } from "@/lib/canvas-objects/object-read";
 import { objectShape } from "@/lib/canvas-objects/object-shape";
 import type { CropRegion } from "@/lib/canvas/moodboard-crop";
+import type { EditOp } from "@/lib/edit/edit-ops";
+import { editSaid } from "@/lib/edit/edit-said";
+import type { EditPreviewing } from "@/server/references/edits";
 import { cropOfferCaption, cropOfferShape } from "@/lib/crop/crop-offer";
-import { CROP_IMAGE, DESIGNER_GENERATE_IMAGE } from "@/lib/agent/designer/image-tools";
+import { EDIT_IMAGE, DESIGNER_GENERATE_IMAGE } from "@/lib/agent/designer/image-tools";
 import type { UploadContentType } from "@/lib/intake/image-types";
 import type { DesignerCall, DesignerOutcome } from "@/server/agents/designer/loop";
 import {
   designerReferences,
   type DesignerReferences,
 } from "@/server/agents/designer/references";
-import { cropReference } from "@/server/agents/cropper/cropper";
+import { editReference } from "@/server/agents/image-editor/image-editor";
 import { generateImage } from "@/server/agents/image-generator/image-generator";
 import type { Cut } from "@/server/references/cut";
 import {
@@ -58,8 +61,9 @@ export function imageToolset({
   references = designerReferences({ db, projectId }),
   budget = ownPictureBudget(),
   generate = generateImage,
-  crop = cropReference,
+  edit = editReference,
   cutRegion,
+  previewEdit,
   storeImage = (contentType: UploadContentType, bytes: Uint8Array) =>
     storeProjectUpload(projectId, contentType, bytes),
   kickAnalyzer = () => {
@@ -79,8 +83,9 @@ export function imageToolset({
   references?: DesignerReferences;
   budget?: PictureBudget;
   generate?: typeof generateImage;
-  crop?: typeof cropReference;
-  cutRegion?: (gcsUri: string, region: CropRegion) => Promise<Cut>;
+  edit?: typeof editReference;
+  cutRegion?: (gcsUri: string, region: CropRegion, ops?: readonly EditOp[]) => Promise<Cut>;
+  previewEdit?: (gcsUri: string) => Promise<EditPreviewing | undefined>;
   storeImage?: (contentType: UploadContentType, bytes: Uint8Array) => Promise<string>;
   kickAnalyzer?: () => void;
   kickThumbnail?: (referenceId: string, bytes: Uint8Array) => void;
@@ -114,7 +119,7 @@ export function imageToolset({
         ...(size ?? {}),
         ...(shape && { aspect: shape.label }),
         ...(offShape && {
-          drawnAt: `${size!.width}×${size!.height}, which is not ${shape!.label} — draw the box to this shape rather than to the one you asked for, or cut it exact with crop_image first`,
+          drawnAt: `${size!.width}×${size!.height}, which is not ${shape!.label} — draw the box to this shape rather than to the one you asked for, or cut it exact with edit_image first`,
         }),
         status: size ? GENERATED_STATUS : GENERATED_UNSIZED_STATUS,
       },
@@ -173,14 +178,15 @@ export function imageToolset({
       framed,
       tally: budget.crops,
       via: "designer",
-      crop,
+      edit,
       ...(cutRegion && { cutRegion }),
+      ...(previewEdit && { previewEdit }),
       storeImage,
       file: references.file,
       kickAnalyzer,
     });
     if (cutFailed(making)) return { result: { error: making.error } };
-    const { row, cut } = making;
+    const { row, cut, ops } = making;
     cropped.push(row.id);
 
     return {
@@ -191,6 +197,7 @@ export function imageToolset({
           nudgeOf: `${named.id} is untouched — this is that cut moved, filed as a second modification of ${frame.id}. It is still in the gallery, and discard_image is how it goes`,
         }),
         keeps: cut.editIntent,
+        did: editSaid(ops),
         why: cut.editRationale,
         ...(cut.aspect && { aspect: cut.aspect }),
         ...(framed && {
@@ -206,7 +213,7 @@ export function imageToolset({
   }
 
   return {
-    declarations: [DESIGNER_GENERATE_IMAGE, CROP_IMAGE],
+    declarations: [DESIGNER_GENERATE_IMAGE, EDIT_IMAGE],
 
     made: () => ({ generated: [...generated], cropped: [...cropped] }),
 
@@ -215,7 +222,7 @@ export function imageToolset({
         case DESIGNER_GENERATE_IMAGE.name:
           return makeImage(args);
 
-        case CROP_IMAGE.name:
+        case EDIT_IMAGE.name:
           return cutImage(args);
 
         default:

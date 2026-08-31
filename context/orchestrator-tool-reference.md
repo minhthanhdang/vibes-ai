@@ -1580,6 +1580,83 @@ the frame, and the `AgentRun` output carries both. `cropCeilingSaid` counts cuts
 `standingOnNote` and `LOOSE_IN_SLOT_NOTE` inverts — the cut is a row now, so the
 swap the model used to be steered away from is the right call.
 
+### `crop_reference` becomes `edit_reference` — built
+
+**Designed and built 2026-09-01.** The cropper was never only a cropper: it is a
+box reader, a model that answers with four numbers while `sharp` does the pixels.
+The widening keeps that invariant exactly and changes only what the numbers are —
+an ordered list of edits rather than one box.
+
+`crop_reference` → `edit_reference`, `crop_image` → `edit_image`, and the module
+moved to `src/server/agents/image-editor/` behind the door `editReference`. The
+rename is the point rather than tidiness: the tool description is the only place
+the orchestrator learns the capability exists, and a tool called `crop_reference`
+that also grades is a lie that costs recall on exactly the turns the feature is
+for. `intention` keeps its **name** — every call site, run-row `input` key and
+test string survives — and widens its description to carry the whole ask ("the
+sign, warmer", "it's on its side"). `aspect` is unchanged and still about the
+crop's shape alone.
+
+**No `ops` parameter, deliberately.** The orchestrator says what the user wants in
+words; the editor decides the ops against the pixels. Leaking op parameters upward
+would put a model that cannot see the picture in charge of how warm the picture
+should be.
+
+**One model call, not a function-calling loop.** Flip and turn are fully
+determined by the words, so a tool round per op would buy a vision read to compute
+`.flop()`. Grading is parametric through sharp rather than generative.
+
+**Where the build decided differently from the design.**
+
+- **The grade earns a second look; nothing else does.** The design said the agent
+  looks again after grading. The build made that conditional in code rather than
+  in the prompt: `EDIT_LOOKS = 2` looks run only when the accepted list contains a
+  grade, and a revision that *drops* the grade ends the loop rather than spending
+  the second look on a list with nothing left to judge. The median edit is
+  therefore exactly one model call — the same as a crop today.
+- **The preview is `inlineData`, never a filed object.** Storing the intermediate
+  would put bytes in the bucket the user may never see and would need reaping.
+  `redactedPart` already elides base64 from the transcript, so a preview does not
+  blow a `.jsonl` up. `previewFromOriginal` memoises one `readObject`, so two looks
+  cost one GCS read.
+- **The loop fails open.** No previewer wired, source too large, decode failed —
+  the planned ops stand and `looks` is 0. A verification that cannot run must never
+  lose the crop the user asked for. A fault *on a look* is swallowed too: we
+  already hold a validated, usable edit, and arguing about a grade is not worth
+  another paid read. A fault in the planning pass is still re-prompted and still
+  costs an attempt, exactly as before.
+- **The crop is not re-openable, enforced in code.** A revised list's crop op is
+  discarded and the planned one re-inserted at the head. Re-opening it would
+  invalidate the preview the model just judged.
+- **The panel stays crop-only by construction.** `planCrop` passes
+  `only: "crop"` and no previewer, so the response schema's `op` enum is `["crop"]`,
+  the non-crop fields are not in the schema at all, and the instruction carries no
+  grade vocabulary. Two independent guards, and the panel's cost is exactly today's.
+- **`EDIT_CALL_LIMIT` stays at 12.** The ceiling counts *tool calls* — how many new
+  references a turn may spawn, a product limit — not model calls. Worst-case spend
+  per turn rises from 36 to 60 flash reads; the median is unchanged.
+  `cropCeilingSaid` became `editCeilingSaid` and now counts edits rather than cuts.
+- **`cropOffer` gained two changes rather than one.** It must stop refusing a
+  whole-frame box when the list does other work — `cropPlan` returning null used to
+  mean "the whole frame is the shot" unconditionally — and the aspect fit inverts
+  the ratio on a quarter turn, because a 16:9 cut turned right arrives 9:16.
+- **The overlay widened from a box to a mark.** The three byte-identical overlay
+  blocks became one `edit-overlay.tsx`. A crop draws today's dimmed rectangle; ops
+  without a crop draw a full-frame ring and a chip saying what was done; `[]` draws
+  nothing. Without this, hovering "Flipped horizontally" would highlight nothing and
+  read as a dead hover.
+- **The executor's answer gained one key, `did`** — the ops as a sentence, from a
+  pure `edit-said.ts` — so the orchestrator can tell the user what happened without
+  re-deriving it from the offer.
+
+**Known gaps this did not close.** `cropSizeLabel`, `cropShapeMeasured` and
+`cropSoftOnBoard` read the un-turned box against the frame and will print swapped
+dimensions in `size` after a quarter turn; the fix is to caption from the measured
+`Cut` rather than from the box. And agent edits still collapse to depth 2 while the
+UI path does not, so the two continue to disagree about the shape of the version
+tree — this change stops the *storage* from being the reason stacking is
+impossible; it does not reconcile the tree.
+
 ### `generate_image` — built and promoted
 
 The twenty-second tool — the `IMAGE` model (`gemini-3-pro-image`, confirmed

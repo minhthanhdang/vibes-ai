@@ -122,7 +122,7 @@ test("the instruction follows the project into the turn, like the declarations",
   assert.ok(!asked[0]!.includes("design_page"), asked[0]);
 
   assert.ok(!asked[1]!.includes("Nothing has been uploaded"), asked[1]);
-  assert.ok(asked[1]!.includes("add_board") && asked[1]!.includes("crop_reference"));
+  assert.ok(asked[1]!.includes("add_board") && asked[1]!.includes("edit_reference"));
   assert.match(asked[1]!, /ref-1 · Paper texture · 3:2 · generated$/);
 });
 
@@ -173,7 +173,7 @@ test("what the model emitted goes back verbatim — signature, interim text, mis
 test("the returned parts are the rounds and then the reply", async () => {
   const { generate } = saying(
     [{ text: "Let me look." }, call("list_references")],
-    [call("crop_reference", { referenceId: "r1" })],
+    [call("edit_reference", { referenceId: "r1" })],
     [{ text: "The cut failed, but here is what you have." }],
   );
   const answers = [
@@ -204,14 +204,14 @@ test("the returned parts are the rounds and then the reply", async () => {
     {
       type: "call",
       callId: "2.1",
-      name: "crop_reference",
+      name: "edit_reference",
       args: { referenceId: "r1" },
-      wire: { functionCall: { name: "crop_reference", args: { referenceId: "r1" } } },
+      wire: { functionCall: { name: "edit_reference", args: { referenceId: "r1" } } },
     },
     {
       type: "result",
       callId: "2.1",
-      name: "crop_reference",
+      name: "edit_reference",
       ok: false,
       response: { error: "no such reference" },
     },
@@ -301,14 +301,14 @@ test("a turn long enough to place a background and crop for its slots finishes",
     [call("inspect_board")],
     [call("put_on_canvas")],
     [call("reorder_on_canvas")],
-    ...Array<Round>(5).fill([call("crop_reference")]),
+    ...Array<Round>(5).fill([call("edit_reference")]),
     [{ text: "The sketch is behind them and all five are in their slots." }],
   ];
   const { generate } = saying(...script);
 
   const { reply, rounds } = await orchestrate({
     message: "use the sketch as the background and lay my five into its slots",
-    tools: [{ name: "crop_reference", description: "", parameters: {} }],
+    tools: [{ name: "edit_reference", description: "", parameters: {} }],
     execute: async () => ({ result: { referenceId: "cut-1" } }),
     generate,
   });
@@ -385,11 +385,11 @@ test("the turn's tokens are every round's, added up", async () => {
 });
 
 test("a tool's own spend is not counted as the orchestrator's", async () => {
-  const { generate } = saying([call("crop_reference")], [{ text: "Have a look." }]);
+  const { generate } = saying([call("edit_reference")], [{ text: "Have a look." }]);
 
   const { usage } = await orchestrate({
     message: "crop it",
-    tools: [{ name: "crop_reference", description: "", parameters: {} }],
+    tools: [{ name: "edit_reference", description: "", parameters: {} }],
     execute: async () => ({ result: { keeps: "the middle sunflower" } }),
     generate,
   });
@@ -412,10 +412,10 @@ test("a model still calling tools when the loop stops says so rather than '…'"
 });
 
 test("a tool that throws goes back to the model as data, not as a 500", async () => {
-  const { sent, generate } = saying([call("crop_reference")], [{ text: "I could not cut that." }]);
+  const { sent, generate } = saying([call("edit_reference")], [{ text: "I could not cut that." }]);
   const { reply } = await orchestrate({
     message: "crop it",
-    tools: [{ name: "crop_reference", description: "", parameters: {} }],
+    tools: [{ name: "edit_reference", description: "", parameters: {} }],
     execute: async () => {
       throw new Error("that project has no references yet");
     },
@@ -427,7 +427,7 @@ test("a tool that throws goes back to the model as data, not as a 500", async ()
     parts: [
       {
         functionResponse: {
-          name: "crop_reference",
+          name: "edit_reference",
           response: { error: "that project has no references yet" },
         },
       },
@@ -523,7 +523,7 @@ test("the instruction leaves out what this project has nothing to call it on", (
   assert.match(empty, /Nothing has been uploaded to this project yet/);
   for (const absent of [
     "show_references",
-    "crop_reference",
+    "edit_reference",
     "discard_reference",
     "add_board",
     "design_page",
@@ -671,7 +671,7 @@ test("a caller that does not say what the project holds gets the whole instructi
   for (const named of [
     "list_references",
     "show_references",
-    "crop_reference",
+    "edit_reference",
     "discard_reference",
     "inspect_board",
     "add_board",

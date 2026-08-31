@@ -2,11 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { neighborId, viewerStep } from "@/lib/references/gallery";
-import { cropBoxOutline } from "@/lib/references/reference-version";
 import { DrawnFrom } from "../../../_reference/components/drawn-from";
 import { ReferenceProperties } from "../../../_reference/components/reference-properties";
 import { ReferenceVersions } from "../../../_reference/components/reference-versions";
 import type { LightboxReference } from "../types";
+import { EditOverlay, type EditMark } from "@/app/projects/[id]/_reference/components/edit-overlay";
 
 export function GalleryLightbox({
   projectId,
@@ -27,17 +27,16 @@ export function GalleryLightbox({
   const reference = references.find((candidate) => candidate.id === openId) ?? null;
   const isOpen = reference !== null;
 
-  const [pointed, setPointed] = useState<{ id: string; cropBox: number[] } | null>(null);
-  const [proposed, setProposed] = useState<{ id: string; cropBox: number[] } | null>(null);
+  const [pointed, setPointed] = useState<{ id: string; mark: EditMark } | null>(null);
+  const [proposed, setProposed] = useState<{ id: string; mark: EditMark } | null>(null);
   const propose = useCallback(
-    (cropBox: number[] | null) => setProposed(cropBox && openId ? { id: openId, cropBox } : null),
+    (mark: EditMark) => setProposed(mark && openId ? { id: openId, mark } : null),
     [openId],
   );
 
-  const outline = cropBoxOutline(
-    (pointed?.id === openId ? pointed.cropBox : null) ??
-      (proposed?.id === openId ? proposed.cropBox : null),
-  );
+  const highlighted =
+    (pointed?.id === openId ? pointed.mark : null) ??
+    (proposed?.id === openId ? proposed.mark : null);
 
   useEffect(() => {
     const element = dialog.current;
@@ -79,18 +78,7 @@ export function GalleryLightbox({
                   height={reference.height ?? undefined}
                   className="block max-h-[76dvh] w-auto max-w-full"
                 />
-                {outline ? (
-                  <div
-                    aria-hidden
-                    style={{
-                      left: `${outline.left}%`,
-                      top: `${outline.top}%`,
-                      width: `${outline.width}%`,
-                      height: `${outline.height}%`,
-                    }}
-                    className="pointer-events-none absolute border border-white/90 shadow-[0_0_0_9999px_rgba(0,0,0,0.55)]"
-                  />
-                ) : null}
+                <EditOverlay mark={highlighted} />
               </div>
             </div>
 
@@ -103,7 +91,7 @@ export function GalleryLightbox({
                 referenceId={reference.id}
                 frame={reference}
                 canPlace={false}
-                onPoint={(cropBox) => setPointed(cropBox ? { id: reference.id, cropBox } : null)}
+                onPoint={(mark) => setPointed(mark ? { id: reference.id, mark } : null)}
                 onPropose={propose}
               />
             </aside>

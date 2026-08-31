@@ -30,7 +30,7 @@ export default async function SignInPage({ searchParams }: PageProps<"/signin">)
   return (
     <>
       <SiteHeader />
-      <main className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center gap-6 px-6 py-16">
+      <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-6 px-6 py-16">
         <div className="flex flex-col gap-2">
           <h1 className="text-2xl font-semibold tracking-tight">Sign in</h1>
           <p className="text-sm opacity-60">

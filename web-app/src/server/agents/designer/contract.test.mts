@@ -10,7 +10,7 @@ import {
   roundsLeftSaid,
 } from "./loop";
 import { CANVAS_PUT_LIMIT, CANVAS_REMOVE_LIMIT, CANVAS_REORDER_LIMIT, CANVAS_TRANSFORM_LIMIT } from "@/lib/agent/shared/canvas-tools";
-import { CROP_CALL_LIMIT, cropCeilingSaid, GENERATE_CALL_LIMIT, generationCeilingSaid } from "@/lib/agent/orchestrator/reference-tools";
+import { EDIT_CALL_LIMIT, editCeilingSaid, GENERATE_CALL_LIMIT, generationCeilingSaid } from "@/lib/agent/orchestrator/reference-tools";
 import { DESIGN_PAGE } from "@/lib/agent/orchestrator/handoff-tools";
 import { COMPOSE_BLOCK_LIMIT } from "@/lib/layout/moodboard-compose";
 import { PICTURE_WINDOW } from "@/lib/agent/designer/picture-window";
@@ -138,7 +138,7 @@ test("the ceiling table is the one the code holds", async () => {
   assert.equal(DESIGNER_PICTURE_LIMIT, 8);
   assert.deepEqual(await filesNaming(/SKILLS_PER_(CALL|DESIGN)/, await appSources()), []);
   assert.equal(GENERATE_CALL_LIMIT, 2);
-  assert.equal(CROP_CALL_LIMIT, COMPOSE_BLOCK_LIMIT);
+  assert.equal(EDIT_CALL_LIMIT, COMPOSE_BLOCK_LIMIT);
   assert.equal(CANVAS_PUT_LIMIT, 10);
   assert.equal(CANVAS_REMOVE_LIMIT, 10);
   assert.equal(CANVAS_TRANSFORM_LIMIT, 10);
@@ -163,8 +163,8 @@ test("agent 8 is handed the turn's picture budget rather than opening one", asyn
 test("a ceiling reached is a ceiling said, with its own number in the sentence", () => {
   assert.match(pictureCeilingSaid("get_image", 1), new RegExp(String(DESIGNER_PICTURE_LIMIT)));
   assert.match(
-    cropCeilingSaid(CROP_CALL_LIMIT, CROP_CALL_LIMIT),
-    new RegExp(`\\b${CROP_CALL_LIMIT} cuts\\b`),
+    editCeilingSaid(EDIT_CALL_LIMIT, EDIT_CALL_LIMIT),
+    new RegExp(`\\b${EDIT_CALL_LIMIT} edits\\b`),
   );
   assert.match(
     generationCeilingSaid(GENERATE_CALL_LIMIT, GENERATE_CALL_LIMIT),

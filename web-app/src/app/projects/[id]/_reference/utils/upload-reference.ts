@@ -2,6 +2,7 @@
 
 import { readImageForUpload, THUMBNAIL_CONTENT_TYPE } from "@/lib/intake/thumbnail";
 import { IMMUTABLE_CACHE_CONTROL, type UploadContentType } from "@/lib/intake/image-types";
+import type { EditOp } from "@/lib/edit/edit-ops";
 import type { useTRPCClient } from "@/trpc/react";
 
 type TRPCClient = ReturnType<typeof useTRPCClient>;
@@ -94,8 +95,7 @@ export type ReferenceVersionUpload = {
   sourceReferenceId: string;
   editIntent: string;
   editRationale?: string;
-  cropBox: number[];
-  editAspect?: string;
+  edit: EditOp[];
 };
 
 export async function uploadVersion(

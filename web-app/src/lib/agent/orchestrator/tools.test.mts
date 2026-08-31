@@ -86,8 +86,8 @@ test("agent 6 is handed no tool that edits a thing standing on a page", () => {
   assert.ok(given.has("set_canvas_background"));
 });
 
-test("crop_reference's board parameters say the swap is made in the call", () => {
-  const properties = declared({ photographs: 4, crops: 1, boards: 1 }, "crop_reference")
+test("edit_reference's board parameters say the swap is made in the call", () => {
+  const properties = declared({ photographs: 4, crops: 1, boards: 1 }, "edit_reference")
     .properties;
   const boardId = String(properties.boardId?.description);
   const pageId = String(properties.pageId?.description);
@@ -121,7 +121,7 @@ test("list_references is declared for any project with a picture in it", () => {
   assert.deepEqual(toolNames({ photographs: 3 }), [
     "list_references",
     "show_references",
-    "crop_reference",
+    "edit_reference",
     "discard_reference",
     "read_references",
     "add_board",
@@ -130,7 +130,7 @@ test("list_references is declared for any project with a picture in it", () => {
   assert.deepEqual(toolNames({ photographs: 3, crops: 1 }), [
     "list_references",
     "show_references",
-    "crop_reference",
+    "edit_reference",
     "discard_reference",
     "read_references",
     "add_board",
@@ -147,7 +147,7 @@ test("the board tools arrive with the first board, and add_board is there before
   assert.deepEqual(toolNames({ photographs: 5, boards: 1 }), [
     "list_references",
     "show_references",
-    "crop_reference",
+    "edit_reference",
     "discard_reference",
     "read_references",
     "list_boards",
@@ -177,7 +177,7 @@ test("a cut is a picture: a project of nothing but crops can still be shown and 
   assert.deepEqual(toolNames({ crops: 2 }), [
     "list_references",
     "show_references",
-    "crop_reference",
+    "edit_reference",
     "discard_reference",
     "read_references",
     "add_board",
@@ -233,12 +233,12 @@ test("the declaration claims no per-turn ceiling, because there is not one", () 
   assert.doesNotMatch(description, /at most/);
 });
 
-test("crop_reference takes a board only where there are boards, and a cut only where there are cuts", () => {
-  const plain = declared({ photographs: 4 }, "crop_reference");
+test("edit_reference takes a board only where there are boards, and a cut only where there are cuts", () => {
+  const plain = declared({ photographs: 4 }, "edit_reference");
   assert.ok(!plain.properties.boardId, "no board to cut for");
   assert.ok(!plain.properties.referenceId?.description?.includes("*cut*"));
 
-  const grown = declared({ photographs: 4, crops: 1, boards: 1 }, "crop_reference");
+  const grown = declared({ photographs: 4, crops: 1, boards: 1 }, "edit_reference");
   assert.ok(grown.properties.boardId);
   assert.match(String(grown.properties.referenceId?.description), /Give the id of a \*cut\*/);
 });

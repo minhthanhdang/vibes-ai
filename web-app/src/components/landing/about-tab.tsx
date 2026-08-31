@@ -3,6 +3,25 @@
 import { motion, useReducedMotion } from "motion/react";
 import { motionTokens, springs } from "@/lib/motion/tokens";
 
+const WHAT_YOU_GET = [
+  {
+    title: "One brief, zero babysitting",
+    body: "Fill the Let's Vibes form once — purpose, page count, palette, vibe — and the run designs every page without further input.",
+  },
+  {
+    title: "Agents with taste",
+    body: "Six Gemini-powered agents read your photos, crop the part that matters, invent the images your gallery is missing, and place every piece.",
+  },
+  {
+    title: "Honest progress",
+    body: "Each page is a bounded unit of work. A failure at page four keeps pages one to three, Stop means stop, and a closed tab is resumable.",
+  },
+  {
+    title: "Files you own",
+    body: "The output is a real board with real geometry — pages, renders, and a one-slide-per-page deck. Not a chat describing a moodboard.",
+  },
+];
+
 const GOOGLE_STACK = [
   {
     name: "Gemini 3.7 Flash",
@@ -70,6 +89,26 @@ export function AboutTab() {
           the images your gallery is missing, and designs every page of the
           board. The finished board exports as a deck, one slide per page.
         </p>
+      </Section>
+
+      <Section>
+        <h2 className="text-xl font-semibold tracking-tight">What you get</h2>
+        <div className="grid gap-4 sm:grid-cols-2">
+          {WHAT_YOU_GET.map((f, i) => (
+            <motion.div
+              key={f.title}
+              initial={{ opacity: 0, y: motionTokens.distance.lg }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, margin: "-40px" }}
+              transition={{ ...springs.gentle, delay: i * 0.06 }}
+              className="rounded-2xl border border-current/10 p-5"
+            >
+              <div className="rainbow-bar mb-4 h-1 w-8 rounded-full" />
+              <h3 className="mb-2 text-sm font-semibold">{f.title}</h3>
+              <p className="text-sm leading-relaxed opacity-60">{f.body}</p>
+            </motion.div>
+          ))}
+        </div>
       </Section>
 
       <Section>

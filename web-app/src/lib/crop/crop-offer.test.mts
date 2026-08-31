@@ -181,31 +181,26 @@ test("a frame with no recorded size refuses a format and allows a loose shape", 
 });
 
 test("a cut asked to be changed reads as a nudge of its own box", () => {
-  const nudge = cropNudge({
-    id: "cut-1",
-    cropBox: [100, 200, 700, 800],
-    editIntent: "the doorway",
-    editAspect: "16:9",
-  });
+  const edit = [{ op: "crop", box: [100, 200, 700, 800], shape: "16:9" }];
+  const nudge = cropNudge({ id: "cut-1", edit, editIntent: "the doorway" });
 
   assert.deepEqual(nudge?.previous, { cropBox: [100, 200, 700, 800], editIntent: "the doorway" });
   assert.equal(nudge?.asked, "16:9");
-  assert.deepEqual(nudge?.origin, {
-    id: "cut-1",
-    cropBox: [100, 200, 700, 800],
-    editIntent: "the doorway",
-    editAspect: "16:9",
-  });
+  assert.deepEqual(nudge?.origin, { id: "cut-1", edit, editIntent: "the doorway" });
 });
 
 test("a nudge inherits whichever vocabulary the cut was filed under", () => {
-  assert.equal(cropNudge({ id: "c", cropBox: [0, 0, 500, 500], editAspect: "square" })?.asked, "square");
-  assert.equal(cropNudge({ id: "c", cropBox: [0, 0, 500, 500] })?.asked, null);
-  assert.equal(cropNudge({ id: "c", cropBox: [0, 0, 500, 500], editAspect: "wonky" })?.asked, null);
+  const cut = (shape?: string) => ({
+    id: "c",
+    edit: [{ op: "crop", box: [0, 0, 500, 500], ...(shape && { shape }) }],
+  });
+  assert.equal(cropNudge(cut("square"))?.asked, "square");
+  assert.equal(cropNudge(cut())?.asked, null);
+  assert.equal(cropNudge(cut("wonky"))?.asked, null);
 });
 
 test("a cut whose region was never recorded is not a nudge", () => {
-  assert.equal(cropNudge({ id: "c", cropBox: [] }), null);
+  assert.equal(cropNudge({ id: "c", edit: [] }), null);
   assert.equal(cropNudge({ id: "c" }), null);
 });
 

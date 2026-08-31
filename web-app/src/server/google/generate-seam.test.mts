@@ -17,7 +17,7 @@ const DECLARED_IN = "src/server/google/vertex.ts";
 const SEAM_CALLERS = [
   "src/server/agents/analyzer/analyzer.ts",
   "src/server/agents/deprecated/compositor.ts",
-  "src/server/agents/cropper/cropper.ts",
+  "src/server/agents/image-editor/image-editor.ts",
   "src/server/agents/designer/loop.ts",
   "src/server/agents/image-generator/image-generator.ts",
   "src/server/agents/deprecated/layout-reader.ts",
@@ -28,7 +28,7 @@ const SEAM_CALLERS = [
 const INJECTED = [
   "src/server/agents/analyzer/analyzer.ts",
   "src/server/agents/deprecated/compositor.ts",
-  "src/server/agents/cropper/cropper.ts",
+  "src/server/agents/image-editor/image-editor.ts",
   "src/server/agents/image-generator/image-generator.ts",
   "src/server/agents/deprecated/layout-reader.ts",
 ];
@@ -42,7 +42,7 @@ const STREAM_INJECTED = [
 const FAKED_IN = [
   "src/server/agents/analyzer/analyzer.test.mts",
   "src/server/agents/deprecated/compositor.test.mts",
-  "src/server/agents/cropper/cropper.test.mts",
+  "src/server/agents/image-editor/image-editor.test.mts",
   "src/server/agents/designer/design.test.mts",
   "src/server/agents/designer/loop.test.mts",
   "src/server/agents/image-generator/image-generator.test.mts",
