@@ -9,7 +9,7 @@ import { GalleryUploader } from "../../_main-viewport/_gallery/components/galler
 import { useDerivedReferenceCopies } from "../../_reference/hooks/use-derived-reference-copies";
 import { useConversationStore } from "../../_chat-sidebar/_conversation/stores/use-conversation-store";
 import { useSidebarStore } from "../stores/use-sidebar-store";
-import { VibesRunPanel } from "../../_main-viewport/_design/_vibes/components/vibes-run-panel";
+import { VibesRunWatcher } from "../../_main-viewport/_design/_vibes/components/vibes-run-watcher";
 import {
   syncWorkspaceViewFromHash,
   useWorkspaceViewStore,
@@ -54,7 +54,7 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
 
       <ChatSidebar projectId={projectId} />
 
-      <VibesRunPanel projectId={projectId} />
+      <VibesRunWatcher projectId={projectId} />
     </div>
   );
 }

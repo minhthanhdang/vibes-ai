@@ -176,7 +176,10 @@ export function SidebarGallery({ projectId }: { projectId: string }) {
   );
   const groups = useMemo(() => tagFacets(references ?? [], tags), [references, tags]);
 
-  if (!references?.length) return null;
+  if (!references?.length)
+    return (
+      <p className="text-[11px] opacity-45">No references yet — add images from the Gallery.</p>
+    );
 
   const dropOrder = shown
     .filter((reference) => dragSelection.includes(reference.id))
@@ -195,22 +198,17 @@ export function SidebarGallery({ projectId }: { projectId: string }) {
   };
 
   return (
-    <div className="flex max-h-72 shrink-0 flex-col gap-2 border-b border-current/10 p-3">
-      <div className="flex items-baseline justify-between gap-2">
-        <span className="text-[11px] font-medium tracking-widest uppercase opacity-45">
-          References
-        </span>
-        {dropOrder.length > 0 || hiddenPicks > 0 ? (
-          <button
-            type="button"
-            onClick={clearDragSelection}
-            className="text-[11px] opacity-60 hover:opacity-100"
-          >
-            {dropOrder.length} selected
-            {hiddenPicks > 0 ? ` (${hiddenPicks} hidden)` : ""} — clear
-          </button>
-        ) : null}
-      </div>
+    <div className="flex min-h-0 flex-col gap-2">
+      {dropOrder.length > 0 || hiddenPicks > 0 ? (
+        <button
+          type="button"
+          onClick={clearDragSelection}
+          className="self-end text-[11px] opacity-60 hover:opacity-100"
+        >
+          {dropOrder.length} selected
+          {hiddenPicks > 0 ? ` (${hiddenPicks} hidden)` : ""} — clear
+        </button>
+      ) : null}
 
       <div className="flex items-center gap-1.5">
         <input

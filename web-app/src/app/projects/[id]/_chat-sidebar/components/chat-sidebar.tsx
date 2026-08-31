@@ -5,7 +5,7 @@ import { sidebarPageWidth } from "@/lib/ui/sidebar";
 import type { AttachmentTarget } from "@/lib/agent/shared/attachments";
 import { ConversationContainer } from "../_conversation/components/conversation-container";
 import { useChatEventRecorder } from "../_conversation/hooks/use-chat-event-recorder";
-import { SidebarGallery } from "./sidebar-gallery";
+import { SidebarPanels } from "./sidebar-panels";
 import { WorkspaceResizer } from "../../_workspace/components/workspace-resizer";
 import { toggleSidebar, useSidebarStore } from "../../_workspace/stores/use-sidebar-store";
 import { setWorkspaceView } from "../../_workspace/stores/use-workspace-view-store";
@@ -60,7 +60,7 @@ export function ChatSidebar({ projectId }: { projectId: string }) {
               onOpenAttachment={openAttachment}
               collapse={collapse}
             >
-              <SidebarGallery projectId={projectId} />
+              <SidebarPanels projectId={projectId} />
             </ConversationContainer>
           </>
         ) : (

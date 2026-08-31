@@ -56,16 +56,26 @@ test("a half-written or out-of-range stored state keeps the parts that make sens
   assert.deepEqual(parseSidebarState('{"isOpen":false}'), {
     isOpen: false,
     width: SIDEBAR_DEFAULT_WIDTH,
+    arePanelsOpen: true,
   });
   assert.deepEqual(parseSidebarState('{"width":"wide"}'), SIDEBAR_DEFAULT_STATE);
   assert.deepEqual(parseSidebarState('{"isOpen":true,"width":9000}'), {
     isOpen: true,
     width: SIDEBAR_MAX_WIDTH,
+    arePanelsOpen: true,
+  });
+});
+
+test("a state stored before panels could fold loads with them open", () => {
+  assert.deepEqual(parseSidebarState('{"isOpen":true,"width":360}'), {
+    isOpen: true,
+    width: 360,
+    arePanelsOpen: true,
   });
 });
 
 test("a state survives a round trip through storage", () => {
-  const state = { isOpen: false, width: 420 };
+  const state = { isOpen: false, width: 420, arePanelsOpen: false };
 
   assert.deepEqual(parseSidebarState(serializeSidebarState(state)), state);
 });

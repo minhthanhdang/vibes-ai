@@ -40,6 +40,8 @@ const storage: PersistStorage<SidebarState> = {
 type SidebarStore = SidebarState & {
   toggleSidebar: () => void;
   openSidebar: () => void;
+  togglePanels: () => void;
+  openPanels: () => void;
   setSidebarWidth: (width: number) => void;
 };
 
@@ -51,13 +53,17 @@ export const useSidebarStore = create<SidebarStore>()(
       openSidebar: () => {
         if (!get().isOpen) set({ isOpen: true });
       },
+      togglePanels: () => set({ arePanelsOpen: !get().arePanelsOpen }),
+      openPanels: () => {
+        if (!get().arePanelsOpen) set({ arePanelsOpen: true });
+      },
       setSidebarWidth: (width) => set({ width: clampSidebarWidth(width) }),
     }),
     {
       name: STORAGE_KEY,
       storage,
       skipHydration: true,
-      partialize: ({ isOpen, width }) => ({ isOpen, width }),
+      partialize: ({ isOpen, width, arePanelsOpen }) => ({ isOpen, width, arePanelsOpen }),
     },
   ),
 );
@@ -68,6 +74,14 @@ export function toggleSidebar() {
 
 export function openSidebar() {
   useSidebarStore.getState().openSidebar();
+}
+
+export function togglePanels() {
+  useSidebarStore.getState().togglePanels();
+}
+
+export function openPanels() {
+  useSidebarStore.getState().openPanels();
 }
 
 export function setSidebarWidth(width: number, { persist = true } = {}) {

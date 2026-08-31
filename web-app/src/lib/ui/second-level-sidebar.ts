@@ -8,7 +8,7 @@ export const SECOND_LEVEL_GUTTER = 32;
 export type SecondLevelPlacement = { right: number; width: number };
 
 export function secondLevelPlacement(
-  sidebar: SidebarState,
+  sidebar: Pick<SidebarState, "isOpen" | "width">,
   viewportWidth: number,
 ): SecondLevelPlacement {
   const right = sidebarPageWidth(sidebar);

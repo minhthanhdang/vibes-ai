@@ -68,6 +68,8 @@ import { DesignInspector } from "./design-inspector";
 import { ExportPanel } from "./export-panel";
 import { VibesForm } from "../../_vibes/components/vibes-form";
 import { openBoard } from "../../../../_workspace/stores/use-open-board-store";
+import { openPanels, openSidebar } from "../../../../_workspace/stores/use-sidebar-store";
+import { setSidebarTab } from "../../../../_workspace/stores/use-sidebar-tab-store";
 import { useBoardHeld } from "../../../../_workspace/stores/use-board-hold-store";
 import { AdoptionFailure } from "./adoption-failure";
 import { BoardControls } from "./board-controls";
@@ -642,6 +644,9 @@ export function DesignCanvas({
           onStarted={({ boardId }) => {
             setVibing(false);
             openBoard(boardId);
+            openSidebar();
+            openPanels();
+            setSidebarTab("vibes");
           }}
         />
       ) : null}
