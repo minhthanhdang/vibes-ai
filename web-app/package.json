@@ -29,6 +29,7 @@
     "design:pages": "node --import tsx --conditions=react-server scripts/design-pages.mts",
     "bucket:lifecycle": "node --import tsx --conditions=react-server scripts/bucket-lifecycle.mts",
     "seed:export": "node --import tsx --conditions=react-server scripts/seed-export.mts",
+    "seed:from-prod": "node --import tsx --conditions=react-server scripts/seed-from-prod.mts",
     "backfill:thumbnails": "node --import tsx --conditions=react-server scripts/backfill-thumbnails.mts",
     "pretest": "npm run mirror:excalidraw && npm run licenses:notice",
     "test": "node --import tsx --conditions=react-server --test \"src/**/*.test.mts\"",

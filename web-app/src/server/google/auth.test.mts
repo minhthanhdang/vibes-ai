@@ -63,6 +63,7 @@ test("an empty string is nothing minted too", async () => {
 });
 
 const MAY_DERIVE_CREDENTIALS = [
+  "scripts/prod-source.mts",
   "src/env.ts",
   "src/server/google/auth.ts",
   "src/server/google/storage.ts",

@@ -8,6 +8,8 @@ const DOORS = [
   "src/server/api/routers/chat.ts",
 ];
 
+const MAY_WRITE_MESSAGES = [...DOORS, "src/server/seed/copy-project.ts"];
+
 const MAY_TOUCH = [
   "src/server/chat/conversations.ts",
   "src/server/api/routers/chat.ts",
@@ -23,9 +25,9 @@ async function appSources() {
   return walked.filter((path) => !TEST.test(path) && path !== SELF);
 }
 
-test("the doors onto the message table are the ones these rules are about", async () => {
+test("the doors onto the message table are those two and the copy that seeds a dev database", async () => {
   const writers = await filesNaming(/chatMessage\.create(Many)?\(/, await appSources());
-  assert.deepEqual(writers, [...DOORS].sort());
+  assert.deepEqual(writers, [...MAY_WRITE_MESSAGES].sort());
 });
 
 test("a thread is moved up the switcher only by a door that means spoken-in", async () => {

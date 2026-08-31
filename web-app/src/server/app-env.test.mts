@@ -2,9 +2,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { TEST, filesNaming, sourceFiles } from "./google/source-tree";
 
-const MAY_NAME_THE_SWITCH = ["src/env.ts"];
+const MAY_NAME_THE_SWITCH = ["scripts/seed-from-prod.mts", "src/env.ts"];
 
 const MAY_BRANCH_ON_THE_ENVIRONMENT = [
+  "scripts/seed-from-prod.mts",
   "src/app/api/dev-storage/[...object]/route.ts",
   "src/env.ts",
   "src/server/auth/google.ts",
