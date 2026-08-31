@@ -37,7 +37,6 @@ import {
 import { reloadBoard } from "../../../_main-viewport/_design/stores/use-board-reload-store";
 import { picturesForPages } from "../../../_events/page-camera";
 import { MarkdownText } from "@/components/markdown-text";
-import { PagePicker } from "./page-picker";
 import { ShownResults } from "./shown-results";
 import { TurnProgress, TurnSummary } from "./turn-steps";
 
@@ -318,7 +317,6 @@ export function ConversationBody({
           send(log.draft.trim());
         }}
       >
-        <PagePicker conversationId={conversationId} attached={log.attached} />
         <textarea
           value={log.draft}
           onChange={(event) => typeDraft(conversationId, event.target.value)}
