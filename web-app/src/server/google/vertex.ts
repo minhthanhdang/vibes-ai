@@ -8,7 +8,6 @@ import {
   type Part,
 } from "@google/genai";
 import { accessToken, googleAuthOptions } from "./auth";
-import { stagedPictures, type PictureResolver } from "./dev-staging";
 import type { ToolDeclaration } from "@/lib/agent/shared/tool-declaration";
 import { env, googleProject } from "@/env";
 import { usageOf } from "@/lib/agent/shared/model-cost";
@@ -89,8 +88,6 @@ export function client() {
   return cached;
 }
 
-export const resolvePictures = stagedPictures();
-
 function bodySaid(error: ApiError) {
   try {
     const parsed = JSON.parse(error.message) as { error?: { message?: unknown } };
@@ -165,15 +162,13 @@ export async function generateContent(
   model: string,
   contents: Content[],
   config: GenerateConfig = {},
-  resolve: PictureResolver = resolvePictures,
 ): Promise<GenerateAnswer> {
   const started = Date.now();
   try {
-    const sent = await resolve(contents);
     const answer = await throttleRetried(() =>
       client().models.generateContent({
         model,
-        contents: sent,
+        contents,
         config: config as GenerateContentConfig,
       }),
     );
@@ -292,17 +287,15 @@ export async function generateContentStream(
   contents: Content[],
   config: GenerateConfig = {},
   watch: GenerateWatcher = { chunk: () => {} },
-  resolve: PictureResolver = resolvePictures,
 ): Promise<GenerateAnswer> {
   const started = Date.now();
   try {
-    const sent = await resolve(contents);
     const chunks = await streamRetried(
       () =>
         throttleRetried(() =>
           client().models.generateContentStream({
             model,
-            contents: sent,
+            contents,
             config: config as GenerateContentConfig,
           }),
         ),
@@ -347,11 +340,9 @@ export async function countTokens(
   model: string,
   contents: Content[],
   config: CountConfig = {},
-  resolve: PictureResolver = resolvePictures,
 ): Promise<number> {
-  const sent = await resolve(contents);
   const { totalTokens } = await throttleRetried(() =>
-    client().models.countTokens({ model, contents: sent, config: config as CountTokensConfig }),
+    client().models.countTokens({ model, contents, config: config as CountTokensConfig }),
   );
   return totalTokens ?? 0;
 }

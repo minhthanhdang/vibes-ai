@@ -11,7 +11,7 @@ TanStack Query 5 · Tailwind 4. Deploys to Vercel.
 ## Setup
 
 ```sh
-cp .env.example .env.local   # APP_ENV, DATABASE_URL, the SA key, DEV_STAGING_BUCKET
+cp .env.example .env.local   # APP_ENV, DATABASE_URL, the SA key, DEV_BUCKET
 npm run db:up                # postgres 18 in docker on 12001
 npm run db:migrate
 npm run dev                  # http://localhost:12000
@@ -27,35 +27,32 @@ boot rather than serving 500s.
 | | `development` | `production` |
 |---|---|---|
 | Database | Postgres in Docker on 12001 | Cloud SQL through the connector |
-| Blobs | `.blobstore/<bucket>/<path>` + `.meta.json` sidecars | GCS |
-| Model-facing pictures | staged into `DEV_STAGING_BUCKET/dev-staging/` | read from GCS in place |
-| Signed URLs | HMAC grants served by `/api/dev-storage` | v4 signed URLs |
+| Blobs | GCS, in `DEV_BUCKET` | GCS, in `GCS_BUCKET` |
 | Gemini | Vertex on the service account | Vertex on the service account |
 | Sign-in | email + password only | Google as well |
 | Signup tier | `DEV_SIGNUP_TIER`, default `TIER_1` | judge code, else Google/password |
 
-Both environments talk to the same Vertex models with the same service
-account, so a model bug reproduces on a laptop. What differs is where the
-bytes live: dev's blobs are files under `DEV_BUCKET`, which Vertex cannot
-read. So a picture on its way to a model is **staged** into `DEV_STAGING_BUCKET`
-under `dev-staging/` at the `vertex.ts` boundary — content-addressed on
-`(uri, generation)`, uploaded once, and skipped entirely if the object is
-already there, so a `next dev` restart re-uses what the last one staged.
+What separates the two is the **database, the bucket and the door** — not the
+Google services behind them. Both reach the same Vertex models with the same
+service account, and both keep bytes in GCS, so a model bug or a signed-URL
+bug reproduces on a laptop instead of only in production.
 
-Staging happens at the boundary only. Every call site, the tool window, the
-picture window and the transcript go on seeing the canonical
-`gs://<DEV_BUCKET>/…` URIs, exactly as they do in production, and the wire
-shape Vertex receives — a `fileData` part naming a `gs://` object — is the one
-production sends. `inlineData` was rejected for this: `PICTURE_WINDOW` is 5 and
-gallery pictures are full-size originals, so five of them base64'd would blow
-Vertex's request ceiling.
+There is deliberately no local filesystem blob store. Vertex reads a picture
+off `gs://` server-side and the browser PUTs an upload straight to a signed
+URL, so a directory on disk would have to be fronted by a fake signing scheme
+and a route to serve it — a second implementation of the one thing you least
+want to differ between environments. `DEV_BUCKET` is a real bucket of your
+own; it is never production's.
 
-Objects under `dev-staging/` are never read by the app and can be swept
-freely; give the prefix a lifecycle rule if the bucket is shared.
+Set it up once:
 
-The local store has **no lifecycle rule** — `renders/` grows until you delete
-`.blobstore/`, where the bucket's 7-day sweep (`npm run bucket:lifecycle`)
-handles it in production.
+```sh
+gcloud storage buckets create gs://<name> --project=<project> --location=us-central1
+./scripts/deploy.sh cors-dev <name>       # lets localhost:12000 PUT to it
+```
+
+Give it the same 7-day sweep production gets (`npm run bucket:lifecycle`), or
+`renders/` grows without bound.
 
 `APP_ENV=production` on a laptop reproduces prod-only bugs against the real
 instance, bucket and Vertex budget. Put those values in `.env.production.local`

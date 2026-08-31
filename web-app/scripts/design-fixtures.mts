@@ -11,7 +11,7 @@ import { persistableElements } from "../src/lib/scene/moodboard-scene";
 import { designPage } from "../src/server/agents/designer/design";
 import { closeDb, db } from "../src/server/db";
 import { readObject } from "../src/server/google/storage";
-import { generateContent, generateContentStream, functionCallsIn } from "../src/server/google/vertex";
+import { generateContent, functionCallsIn } from "../src/server/google/vertex";
 import { RENDER_SOURCE_BYTE_LIMIT, renderForModel } from "../src/server/render/for-model";
 
 config({ path: ".env.local" });
@@ -116,7 +116,7 @@ try {
     );
 
     let rounds = 0;
-    const watched: typeof generateContentStream = async (model, contents, options) => {
+    const watched: typeof generateContent = async (model, contents, options) => {
       rounds += 1;
       const parts = contents.flatMap(({ parts }) => parts);
       const pictures = parts.filter((part) => part.fileData || part.inlineData).length;

@@ -81,10 +81,7 @@ const developmentSchema = z.object({
   ...base,
   APP_ENV: z.literal("development"),
 
-  DEV_BUCKET: z.string().min(1).default("vibes-dev-local"),
-  DEV_STAGING_BUCKET: z.string().min(1),
-  DEV_BLOB_DIR: z.string().min(1).default(".blobstore"),
-  DEV_SIGNING_SECRET: z.string().min(1).default("dev-signing-secret"),
+  DEV_BUCKET: z.string().min(1),
   DEV_SIGNUP_TIER: z.enum(["TIER_1", "TIER_2", "TIER_3"]).default("TIER_1"),
 });
 
@@ -152,13 +149,6 @@ export function googleProject(): string {
   return env().GOOGLE_CLOUD_PROJECT;
 }
 
-export function devStagingBucket(): string {
-  const current = env();
-  if (current.APP_ENV !== "development") {
-    throw new Error("pictures are staged for the model only under APP_ENV=development");
-  }
-  return current.DEV_STAGING_BUCKET;
-}
 
 export function devSignupTier(): AccountTier | null {
   const current = env();
@@ -170,18 +160,3 @@ export function bucketName(): string {
   return current.APP_ENV === "development" ? current.DEV_BUCKET : current.GCS_BUCKET;
 }
 
-export function devBlobDir(): string {
-  const current = env();
-  if (current.APP_ENV !== "development") {
-    throw new Error("the local blob directory only exists under APP_ENV=development");
-  }
-  return current.DEV_BLOB_DIR;
-}
-
-export function devSigningSecret(): string {
-  const current = env();
-  if (current.APP_ENV !== "development") {
-    throw new Error("the local signing secret only exists under APP_ENV=development");
-  }
-  return current.DEV_SIGNING_SECRET;
-}

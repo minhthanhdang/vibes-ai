@@ -6,12 +6,9 @@ const MAY_NAME_THE_SWITCH = ["scripts/seed-from-prod.mts", "src/env.ts"];
 
 const MAY_BRANCH_ON_THE_ENVIRONMENT = [
   "scripts/seed-from-prod.mts",
-  "src/app/api/dev-storage/[...object]/route.ts",
   "src/env.ts",
   "src/server/auth/google.ts",
   "src/server/db.ts",
-  "src/server/google/dev-staging.ts",
-  "src/server/google/storage.ts",
 ];
 
 async function naming(needle: string | RegExp) {

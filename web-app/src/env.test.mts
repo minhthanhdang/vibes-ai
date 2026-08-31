@@ -33,7 +33,7 @@ function devComplete(
     DATABASE_URL: "postgresql://director:director@localhost:12001/director_assistant",
     GOOGLE_SERVICE_ACCOUNT_JSON: JSON.stringify(KEY),
     GOOGLE_CLOUD_PROJECT: "project-fixture",
-    DEV_STAGING_BUCKET: "staging-bucket-fixture",
+    DEV_BUCKET: "dev-bucket-fixture",
     ...overrides,
   };
 }
@@ -227,16 +227,9 @@ test("both environments reach Vertex, so both are held to a service account and 
   assert.throws(() => parseEnv(devWithout("GOOGLE_CLOUD_PROJECT")), /GOOGLE_CLOUD_PROJECT/);
 });
 
-test("development names the bucket the model reads staged pictures out of, and will not default it", () => {
-  assert.equal(devEnv(devComplete()).DEV_STAGING_BUCKET, "staging-bucket-fixture");
-  assert.throws(() => parseEnv(devWithout("DEV_STAGING_BUCKET")), /DEV_STAGING_BUCKET/);
-});
-
-test("the dev blob store, its bucket and its signing secret all default", () => {
-  const parsed = devEnv(devComplete());
-  assert.equal(parsed.DEV_BUCKET, "vibes-dev-local");
-  assert.equal(parsed.DEV_BLOB_DIR, ".blobstore");
-  assert.equal(parsed.DEV_SIGNING_SECRET, "dev-signing-secret");
+test("development names its own bucket and will not default it — a made-up name is not a bucket", () => {
+  assert.equal(devEnv(devComplete()).DEV_BUCKET, "dev-bucket-fixture");
+  assert.throws(() => parseEnv(devWithout("DEV_BUCKET")), /DEV_BUCKET/);
 });
 
 test("a dev signup is tier 1 unless the tier is named, and a tier that is not one is refused", () => {
@@ -246,8 +239,8 @@ test("a dev signup is tier 1 unless the tier is named, and a tier that is not on
 });
 
 test("a production environment carrying a dev-only key parses, and the key is stripped rather than kept", () => {
-  const parsed = prodEnv(complete({ DEV_STAGING_BUCKET: "staging-bucket-fixture" }));
-  assert.equal((parsed as Record<string, unknown>).DEV_STAGING_BUCKET, undefined);
+  const parsed = prodEnv(complete({ DEV_BUCKET: "dev-bucket-fixture" }));
+  assert.equal((parsed as Record<string, unknown>).DEV_BUCKET, undefined);
 });
 
 test("the environment is parsed once per process, and the parse is what is kept", async () => {

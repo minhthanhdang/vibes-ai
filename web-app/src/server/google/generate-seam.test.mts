@@ -72,8 +72,7 @@ type PositionalStream = (
 const seam: PositionalSeam = generateContent;
 const counting: PositionalCount = countTokens;
 const streaming: PositionalStream = generateContentStream;
-const widened: PositionalStream = async (model, contents, config) =>
-  generateContent(model, contents, config);
+const widened: PositionalStream = generateContent;
 
 async function appSources() {
   const walked = await sourceFiles("src", "scripts");

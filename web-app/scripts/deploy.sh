@@ -200,17 +200,16 @@ cmd_schedule() {
   echo "scheduler jobs vibes-worker and analyzer-worker upserted (every minute)"
 }
 
-cmd_cors() {
-  local url tmp
-  url=$(service_url)
+add_cors_origin() {
+  local bucket=$1 origin=$2 tmp
   tmp=$(mktemp -d)
-  gcloud storage buckets describe "$BUCKET" --format="json(cors_config)" > "$tmp/current.json"
+  gcloud storage buckets describe "$bucket" --format="json(cors_config)" > "$tmp/current.json"
   node -e "
     const fs = require('fs');
     const [currentPath, outPath, origin] = process.argv.slice(1);
     const cors = JSON.parse(fs.readFileSync(currentPath, 'utf8')).cors_config ?? [];
     if (cors.length === 0) {
-      cors.push({ origin: [origin], method: ['GET', 'PUT', 'HEAD'], responseHeader: ['Content-Type'], maxAgeSeconds: 3600 });
+      cors.push({ origin: [origin], method: ['GET', 'PUT', 'HEAD'], responseHeader: ['Content-Type', 'Cache-Control'], maxAgeSeconds: 3600 });
     } else {
       for (const entry of cors) {
         entry.origin ??= [];
@@ -219,10 +218,24 @@ cmd_cors() {
     }
     fs.writeFileSync(outPath, JSON.stringify(cors, null, 2));
     console.log('origins now: ' + [...new Set(cors.flatMap((entry) => entry.origin))].join(', '));
-  " "$tmp/current.json" "$tmp/merged.json" "$url"
-  gcloud storage buckets update "$BUCKET" --cors-file="$tmp/merged.json"
+  " "$tmp/current.json" "$tmp/merged.json" "$origin"
+  gcloud storage buckets update "$bucket" --cors-file="$tmp/merged.json"
   rm -rf "$tmp"
+}
+
+cmd_cors() {
+  add_cors_origin "$BUCKET" "$(service_url)"
   echo "verify with: npm run bucket:lifecycle"
+}
+
+cmd_cors_dev() {
+  local bucket=${1:-}
+  if [[ -z $bucket ]]; then
+    echo "usage: $0 cors-dev <DEV_BUCKET>   (the bucket named in .env.local)"
+    exit 1
+  fi
+  add_cors_origin "gs://${bucket#gs://}" "${DEV_ORIGIN:-http://localhost:12000}"
+  echo "the browser can now PUT uploads straight to gs://${bucket#gs://} from dev"
 }
 
 cmd_all() {
@@ -238,12 +251,14 @@ case "${1:-}" in
   release) cmd_release ;;
   schedule) cmd_schedule ;;
   cors) cmd_cors ;;
+  cors-dev) cmd_cors_dev "${2:-}" ;;
   all) cmd_all ;;
   url) service_url ;;
   prod-env) cmd_prod_env "${2:-}" ;;
   prod-run) shift; with_prod_env "$@" ;;
   *)
     echo "usage: $0 {bootstrap|build|migrate|release|schedule|cors|all|url}"
+    echo "       $0 cors-dev <DEV_BUCKET>"
     echo "       $0 prod-env [--secrets]"
     echo "       $0 prod-run <command...>"
     exit 1
