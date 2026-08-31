@@ -1,47 +1,11 @@
 # Vibes AI
 **Open source AI-first design platform. Visual communication makes easier.**
 
-## From Idea to Impact
-
-### The Problem - Design takes time and skills. Most people don't have both.
-
-Good design takes two things: time and skill.
-
-Designers have the skill, but not unlimited time. They can't explore every idea, make endless variations, and iterate on every request.
-
-Clients and managers often have the opposite problem. They know what they want, but don't have the skills to turn that idea into a design. They can say “make it modern” or “something like this”, but can't easily show what they mean.
-
-So the problem isn't just that design takes a long time. It's that the people with the time and skills are rarely the same people.
-
-The evidence:
-
-- **Design eats hours.** Non-designers who create their own branding spend around **9–10 hours a week** on design work.
-
-- **Iteration is expensive.** **88% of designers** report that a new design takes at least **3 revisions**, while **42%** say it takes 6 or more.
-
-- **Designers spend a lot of time on small changes.** Nearly **65% of designers** spend at least half their week making small tweaks and customisations.
-
-- **Design is a specialised skill.** Even learning the basics of Figma can take **40+ hours**, before becoming genuinely proficient.
-
-
-### The Solution - a Designer Co-Pilot that automates, designs & iterates quickly on user's behalf
-
-**Vibes AI** is a Designer Co-Pilot that lets designers and clients iterate on designs together, without the usual time and skill constraints.
-
-Clients can describe changes in natural language — “make it warmer,” “try a different layout,” “make it more premium” — and see the result instantly.
-
-Designers can generate multiple variations and explore different directions without manually creating every version.
-
-The core insight: **Vibes AI** gives both sides what they're missing — clients get design skills, designers get more time.
-
-Design more. Iterate faster. Communicate better.
-
-<!-- TODO: replace with the real links before submitting -->
-[**▶ 4-min demo**](TODO-youtube-url) · [**🔗 Live app**](TODO-live-url) · [**🏗 Architecture**](#architecture) · [**⚡ Quick start**](#quick-start)
+[**▶ 4-min demo**](TODO-youtube-url) · [**🔗 Live app**](https://vibes-ai-655806945364.us-central1.run.app/) · [**🏗 Architecture**](#architecture) · [**⚡ Quick start**](#quick-start)
 
 Built for the **All Things Agentic Hackathon** — category **Taskmaster**.
 
-`gemini-3.7-flash` · `gemini-3-pro-image` · `gemma-4-26b-a4b-it-maas` (open-weight) · Gen AI SDK (Vertex mode) · Cloud SQL · Cloud Storage · Cloud Scheduler
+`gemini-3.7-flash` · `gemini-3-pro-image` · `gemma-4-26b-a4b-it-maas` · Gen AI SDK (Vertex mode) · Cloud SQL · Cloud Storage · Cloud Scheduler
 
 <!-- TODO: hero GIF — the unattended run, not the chat. Fill the "Let's Vibes" form,
      then time-lapse six blank pages filling themselves in. ~15s, no narration. -->
@@ -90,7 +54,7 @@ in a progress record, it cannot go stale: asking "is anything on this page?" is
 the same question as "was this page designed?"
 
 
-## Quick start
+## Reproducible Testing Instructions
 
 The app is a single Next.js project in `web-app/`. Local development is not
 offline: it signs its own URLs against a real bucket and calls real Gemini, so a
@@ -372,27 +336,7 @@ database**, because every agent's loop is separable from its executor.
 
 ## Architecture
 
-```mermaid
-flowchart TB
-    U([User]) -->|drag & drop| B[Browser workspace<br/>Next.js 16 · React 19]
-    U -->|"Let's Vibes brief<br/>purpose · pages · palette · vibe"| LOOP[Unattended run<br/>one bounded call per page<br/>resumable · stoppable]
-    LOOP -->|"designed · empty · refused"| A8
-    B -->|v4 signed PUT<br/>bytes never touch a function| GCS[(Cloud Storage<br/>originals · crops · renders)]
-    B <-->|tRPC| S[Agent tier<br/>src/server/agents]
-
-    S -->|6 Orchestrator · FLASH| O{{AgentTool routing}}
-    O --> A2[2 · Property analyzer<br/>FLASH vision + schema]
-    O --> A3[3 · Cropper<br/>FLASH + sharp]
-    O --> A4[4 · Compositor<br/>FLASH + deterministic layouts]
-    O --> A7[7 · Image generator<br/>IMAGE]
-    O --> A8[8 · Design assistant<br/>FLASH vision + tool loop]
-    A8 --> SK[Skills<br/>13 files, no model call]
-
-    A2 & A3 & A4 & A7 & A8 -->|Gen AI SDK · Vertex mode| V[[Gemini Enterprise<br/>Agent Platform]]
-    A3 & A7 & A8 --> GCS
-    S <-->|Node connector, no IP allowlist| SQL[(Cloud SQL<br/>PostgreSQL 18)]
-    SCH[Cloud Scheduler] -->|claims QUEUED AgentRun| A2
-```
+![Vibes AI architecture](docs/architecture.png)
 
 Two things about this diagram are load-bearing.
 
