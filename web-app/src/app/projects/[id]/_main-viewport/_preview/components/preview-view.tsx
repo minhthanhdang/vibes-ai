@@ -118,7 +118,7 @@ function BoardPreview({ boardId, resumeDeck }: { boardId: string; resumeDeck: bo
       <button
         type="button"
         onClick={() => setExporting(true)}
-        className="absolute top-3 right-3 z-10 h-8 rounded-lg border border-[var(--default-border-color)] bg-[var(--island-bg-color)] px-3 text-xs text-[var(--text-primary-color)] shadow-sm hover:bg-[var(--button-hover-bg)]"
+        className="absolute top-3 right-3 z-10 h-8 rounded-lg border border-current/15 bg-[var(--background)] px-3 text-xs shadow-sm hover:bg-current/5"
       >
         Export
       </button>

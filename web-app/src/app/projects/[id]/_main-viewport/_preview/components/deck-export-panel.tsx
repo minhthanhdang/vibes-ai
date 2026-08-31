@@ -23,6 +23,14 @@ const FORMATS = [
 
 type DeckFormat = (typeof FORMATS)[number]["value"];
 
+const PANEL_TOKENS = {
+  "--island-bg-color": "var(--background)",
+  "--text-primary-color": "var(--foreground)",
+  "--default-border-color": "color-mix(in oklab, currentColor 15%, transparent)",
+  "--button-hover-bg": "color-mix(in oklab, currentColor 8%, transparent)",
+  "--color-primary": "#6965db",
+} as React.CSSProperties;
+
 type Progress = { label: string; done: number; total: number } | { label: string } | null;
 
 export function DeckExportPanel({
@@ -120,6 +128,7 @@ export function DeckExportPanel({
   return (
     <div
       data-board-overlay
+      style={PANEL_TOKENS}
       className="absolute inset-0 z-20 flex items-center justify-center bg-black/40 p-4"
       onPointerDown={(event) => {
         if (event.target === event.currentTarget && !busy) close();
