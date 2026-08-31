@@ -13,7 +13,13 @@ import { canvasToolset } from "../src/server/canvas/tool-canvas";
 import { closeDb, db } from "../src/server/db";
 import { readObject } from "../src/server/google/storage";
 import { RENDER_SOURCE_BYTE_LIMIT, renderForModel } from "../src/server/render/for-model";
-import { generateContent, functionCallsIn, textOf, type Content } from "../src/server/google/vertex";
+import {
+  generateContent,
+  generateContentStream,
+  functionCallsIn,
+  textOf,
+  type Content,
+} from "../src/server/google/vertex";
 
 config({ path: ".env.local" });
 config({ path: ".env" });
@@ -110,7 +116,7 @@ const named = ({ name, args }: { name: string; args?: Record<string, unknown> })
 
 let round = 0;
 
-const watchedGenerate: typeof generateContent = async (model, contents, options) => {
+const watchedGenerate: typeof generateContentStream = async (model, contents, options) => {
   round += 1;
   const carried = sent(contents);
   const started = Date.now();

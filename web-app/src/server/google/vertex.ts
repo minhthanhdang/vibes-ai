@@ -8,8 +8,9 @@ import {
   type Part,
 } from "@google/genai";
 import { accessToken, googleAuthOptions } from "./auth";
+import { filesApiPictures, type FilesApi, type PictureResolver } from "./dev-pictures";
 import type { ToolDeclaration } from "@/lib/agent/shared/tool-declaration";
-import { cloudEnv, env } from "@/env";
+import { cloudEnv, env, geminiApiKey } from "@/env";
 import { usageOf } from "@/lib/agent/shared/model-cost";
 import { redactedContents, type TranscriptRecord } from "@/lib/agent/shared/transcript";
 import { recordModelCall, transcribing } from "@/server/agents/shared/transcript";
@@ -70,16 +71,19 @@ export async function vertexFetch(path: string, init: RequestInit & { retries?: 
 }
 
 export function clientOptions(): GoogleGenAIOptions {
-  const { GOOGLE_CLOUD_PROJECT: project } = cloudEnv();
-  const location = env().GOOGLE_CLOUD_LOCATION;
+  const httpOptions = {
+    retryOptions: { attempts: RETRY_ATTEMPTS, httpStatusCodes: RETRYABLE_STATUSES },
+  };
+
+  const apiKey = geminiApiKey();
+  if (apiKey) return { enterprise: false, apiKey, httpOptions };
+
   return {
     enterprise: true,
-    project,
-    location,
+    project: cloudEnv().GOOGLE_CLOUD_PROJECT,
+    location: env().GOOGLE_CLOUD_LOCATION,
     googleAuthOptions: googleAuthOptions(),
-    httpOptions: {
-      retryOptions: { attempts: RETRY_ATTEMPTS, httpStatusCodes: RETRYABLE_STATUSES },
-    },
+    httpOptions,
   };
 }
 
@@ -89,6 +93,19 @@ export function client() {
   cached ??= new GoogleGenAI(clientOptions());
   return cached;
 }
+
+function geminiFiles(): FilesApi {
+  return {
+    upload: (bytes, mimeType) =>
+      client().files.upload({
+        file: new Blob([bytes], { type: mimeType }),
+        config: { mimeType },
+      }),
+    get: (name) => client().files.get({ name }),
+  };
+}
+
+export const resolvePictures = filesApiPictures(geminiFiles);
 
 function bodySaid(error: ApiError) {
   try {
@@ -164,13 +181,15 @@ export async function generateContent(
   model: string,
   contents: Content[],
   config: GenerateConfig = {},
+  resolve: PictureResolver = resolvePictures,
 ): Promise<GenerateAnswer> {
   const started = Date.now();
   try {
+    const sent = await resolve(contents);
     const answer = await throttleRetried(() =>
       client().models.generateContent({
         model,
-        contents,
+        contents: sent,
         config: config as GenerateContentConfig,
       }),
     );
@@ -289,15 +308,17 @@ export async function generateContentStream(
   contents: Content[],
   config: GenerateConfig = {},
   watch: GenerateWatcher = { chunk: () => {} },
+  resolve: PictureResolver = resolvePictures,
 ): Promise<GenerateAnswer> {
   const started = Date.now();
   try {
+    const sent = await resolve(contents);
     const chunks = await streamRetried(
       () =>
         throttleRetried(() =>
           client().models.generateContentStream({
             model,
-            contents,
+            contents: sent,
             config: config as GenerateContentConfig,
           }),
         ),
@@ -342,9 +363,11 @@ export async function countTokens(
   model: string,
   contents: Content[],
   config: CountConfig = {},
+  resolve: PictureResolver = resolvePictures,
 ): Promise<number> {
+  const sent = await resolve(contents);
   const { totalTokens } = await throttleRetried(() =>
-    client().models.countTokens({ model, contents, config: config as CountTokensConfig }),
+    client().models.countTokens({ model, contents: sent, config: config as CountTokensConfig }),
   );
   return totalTokens ?? 0;
 }

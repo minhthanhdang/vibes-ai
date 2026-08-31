@@ -8,6 +8,7 @@ const MAY_BRANCH_ON_THE_ENVIRONMENT = [
   "src/app/api/dev-storage/[...object]/route.ts",
   "src/env.ts",
   "src/server/db.ts",
+  "src/server/google/dev-pictures.ts",
   "src/server/google/storage.ts",
 ];
 
