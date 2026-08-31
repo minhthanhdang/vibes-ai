@@ -18,18 +18,16 @@ export const PREVIEW_THUMB_MAX_DIMENSION = 240;
 
 window.EXCALIDRAW_ASSET_PATH = EXCALIDRAW_ASSET_PATH;
 
-export async function pageBitmapUrl(
+export async function pageCanvas(
   scene: MoodboardScene,
   page: BoardPage,
   maxDimension: number,
-): Promise<string | null> {
+): Promise<HTMLCanvasElement | null> {
   const elements = scene.elements as unknown as readonly NonDeletedExcalidrawElement[];
   const frame = elements.find((element) => element.id === page.id && isPageElement(element));
   if (!frame) return null;
 
-  await ensureGoogleFontsFor(scene.elements);
-
-  const canvas = await exportToCanvas({
+  return exportToCanvas({
     elements: pageExportElements(elements, page),
     appState: {
       ...(scene.appState as Partial<AppState>),
@@ -41,9 +39,26 @@ export async function pageBitmapUrl(
     maxWidthOrHeight: maxDimension,
     exportingFrame: frame as ExcalidrawFrameLikeElement,
   });
+}
 
-  const blob = await new Promise<Blob | null>((resolve) =>
-    canvas.toBlob(resolve, BOARD_RENDER_CONTENT_TYPE),
-  );
+export function canvasBlob(
+  canvas: HTMLCanvasElement,
+  contentType: string,
+  quality?: number,
+): Promise<Blob | null> {
+  return new Promise((resolve) => canvas.toBlob(resolve, contentType, quality));
+}
+
+export async function pageBitmapUrl(
+  scene: MoodboardScene,
+  page: BoardPage,
+  maxDimension: number,
+): Promise<string | null> {
+  await ensureGoogleFontsFor(scene.elements);
+
+  const canvas = await pageCanvas(scene, page, maxDimension);
+  if (!canvas) return null;
+
+  const blob = await canvasBlob(canvas, BOARD_RENDER_CONTENT_TYPE);
   return blob ? URL.createObjectURL(blob) : null;
 }

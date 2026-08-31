@@ -35,11 +35,11 @@ export function boardExportFileName(
   format: BoardExportFormat,
   page?: unknown,
 ): string {
-  const named = [slugOf(title), slugOf(page)].filter(Boolean).join("-");
+  const named = [nameSlug(title), nameSlug(page)].filter(Boolean).join("-");
   return `${named || "moodboard"}.${BOARD_EXPORT_FORMATS[format].extension}`;
 }
 
-function slugOf(name: unknown): string {
+export function nameSlug(name: unknown): string {
   if (typeof name !== "string") return "";
   return name
     .toLowerCase()
