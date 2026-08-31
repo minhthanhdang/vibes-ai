@@ -16,23 +16,22 @@ import { PageCarousel } from "./page-carousel";
 import { BoardStrip } from "./board-strip";
 import { DeckExportPanel } from "./deck-export-panel";
 
-function resumedDeckBoardId(): string | null {
+function deckBoardIdInUrl(): string | null {
   if (typeof window === "undefined") return null;
-  const url = new URL(window.location.href);
-  const boardId = url.searchParams.get("deck");
-  if (!boardId) return null;
-  url.searchParams.delete("deck");
-  window.history.replaceState(null, "", url.toString());
-  return boardId;
+  return new URLSearchParams(window.location.search).get("deck");
 }
 
 export function PreviewView({ projectId }: { projectId: string }) {
   const trpc = useTRPC();
   const { data: boards, isPending } = useQuery(trpc.moodboard.listByProject.queryOptions({ projectId }));
 
-  const [resumed] = useState(resumedDeckBoardId);
+  const [resumed] = useState(deckBoardIdInUrl);
   useEffect(() => {
-    if (resumed) openBoard(resumed);
+    if (!resumed) return;
+    openBoard(resumed);
+    const url = new URL(window.location.href);
+    url.searchParams.delete("deck");
+    window.history.replaceState(null, "", url.toString());
   }, [resumed]);
 
   const requestedId = useOpenBoardStore((state) => state.requestedId);
