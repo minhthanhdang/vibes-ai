@@ -1,7 +1,7 @@
 # Vibes AI
 **Open source AI-first design platform. Visual communication makes easier.**
 
-[**▶ 4-min demo**](TODO-youtube-url) · [**🔗 Live app**](https://vibes-ai-655806945364.us-central1.run.app/) · [**🏗 Architecture**](#architecture) · [**⚡ Quick start**](#quick-start)
+[**▶ 4-min demo**](https://youtu.be/mwthfVIQC6c) · [**🔗 Live app**](https://vibes-ai-655806945364.us-central1.run.app/) · [**🏗 Architecture**](#architecture) · [**⚡ Reproducible Testing Instructions**](#reproducible-testing-instructions)
 
 Built for the **All Things Agentic Hackathon** — category **Taskmaster**.
 
